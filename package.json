@@ -1,6 +1,6 @@
 {
   "name": "dsh-rescue",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Rescue a broken DeepSeek Harness plugin profile: snapshot, diagnose, and roll back without losing anything.",
   "type": "module",
   "bin": {

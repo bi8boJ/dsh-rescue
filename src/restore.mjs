@@ -141,6 +141,72 @@ export function restoreSnapshot({
 }
 
 /**
+ * Replace `dsh.profile.bundles` with an explicit list, touching nothing else in
+ * the manifest. Used by safe-mode and by the bisect loop.
+ */
+export function setBundles({
+  home,
+  profile = 'desktop',
+  bundles,
+  force = false,
+  dryRun = false,
+  detector,
+  layout,
+  retention,
+  journalAction = 'set-bundles',
+  preKind = 'pre-restore',
+  preLabel = '',
+} = {}) {
+  if (!Array.isArray(bundles) || bundles.length === 0) {
+    throw new Error('setBundles: bundles 不能为空');
+  }
+  const resolved = layout ?? resolveLayout({ home, profile });
+  assertWritable({ dryRun, force, detector });
+  const current = captureState({ home: resolved.home, profile: resolved.profile, layout: resolved });
+  const packageFile = current.files.find((file) => file.key === 'profilePackage');
+  if (!packageFile || !packageFile.exists) {
+    throw new Error(`找不到 ${resolved.profileDir}${path.sep}package.json，无法改写 bundles`);
+  }
+  const parsed = parseProfile(packageFile.text);
+  const before = parsed.bundles;
+  if (before.join('\u0000') === bundles.join('\u0000')) {
+    return { dryRun, changed: false, before, after: bundles, preSnapshotId: null, written: [] };
+  }
+
+  const indent = detectIndent(packageFile.text);
+  const next = {
+    ...parsed.raw,
+    dsh: { ...(parsed.raw.dsh ?? {}), profile: { ...(parsed.raw.dsh?.profile ?? {}), bundles } },
+  };
+  const text = `${JSON.stringify(next, null, indent)}\n`;
+  const target = absoluteFor(resolved.home, packageFile.rel);
+
+  if (dryRun) {
+    return { dryRun: true, changed: true, before, after: bundles, preSnapshotId: null, written: [packageFile.rel] };
+  }
+
+  const pre = createSnapshot({
+    home: resolved.home,
+    profile: resolved.profile,
+    layout: resolved,
+    kind: preKind,
+    label: preLabel || journalAction,
+    state: current,
+    retention,
+  });
+  writeAtomic(target, text);
+  appendJournal(resolved, {
+    action: journalAction,
+    snapshotId: null,
+    preSnapshotId: pre.id,
+    written: [packageFile.rel],
+    before,
+    after: bundles,
+  });
+  return { dryRun: false, changed: true, before, after: bundles, preSnapshotId: pre.id, written: [packageFile.rel] };
+}
+
+/**
  * Keep only the shipped bundles. Everything else is dropped from
  * `dsh.profile.bundles` while `dependencies` stays untouched, so re-enabling is
  * just put the name back (or `dsh-rescue undo`).
@@ -155,7 +221,6 @@ export function safeMode({
   retention,
 } = {}) {
   const resolved = layout ?? resolveLayout({ home, profile });
-  const running = assertWritable({ dryRun, force, detector });
   const current = captureState({ home: resolved.home, profile: resolved.profile, layout: resolved });
   const packageFile = current.files.find((file) => file.key === 'profilePackage');
   if (!packageFile || !packageFile.exists) {
@@ -170,43 +235,24 @@ export function safeMode({
   if (droppedBundles.length === 0) {
     return { dryRun, alreadySafe: true, keptBundles, droppedBundles, preSnapshotId: null, written: [] };
   }
-
-  const indent = detectIndent(packageFile.text);
-  const next = {
-    ...parsed.raw,
-    dsh: { ...(parsed.raw.dsh ?? {}), profile: { ...(parsed.raw.dsh?.profile ?? {}), bundles: keptBundles } },
-  };
-  const text = `${JSON.stringify(next, null, indent)}\n`;
-  const target = absoluteFor(resolved.home, packageFile.rel);
-
-  if (dryRun) {
-    return { dryRun: true, alreadySafe: false, keptBundles, droppedBundles, preSnapshotId: null, written: [packageFile.rel] };
-  }
-
-  const pre = createSnapshot({
-    home: resolved.home,
-    profile: resolved.profile,
+  const result = setBundles({
     layout: resolved,
-    kind: 'pre-safe-mode',
-    label: 'before safe-mode',
-    state: current,
+    bundles: keptBundles,
+    force,
+    dryRun,
+    detector,
     retention,
-  });
-  writeAtomic(target, text);
-  appendJournal(resolved, {
-    action: 'safe-mode',
-    snapshotId: null,
-    preSnapshotId: pre.id,
-    written: [packageFile.rel],
-    droppedBundles,
+    journalAction: 'safe-mode',
+    preKind: 'pre-safe-mode',
+    preLabel: 'before safe-mode',
   });
   return {
-    dryRun: false,
+    dryRun: result.dryRun,
     alreadySafe: false,
     keptBundles,
     droppedBundles,
-    preSnapshotId: pre.id,
-    written: [packageFile.rel],
+    preSnapshotId: result.preSnapshotId,
+    written: result.written,
   };
 }
 

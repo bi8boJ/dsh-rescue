@@ -4,18 +4,19 @@ import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 import { resolveLayout } from './paths.mjs';
-import { captureState } from './state.mjs';
+import { captureState, parseProfile } from './state.mjs';
 import { collectKnownIds, runDoctor } from './doctor.mjs';
 import { detectRuntime, asarCandidates } from './runtime.mjs';
 import { asarFromProfileOverlays } from './installation.mjs';
 import { latestCrash } from './crash.mjs';
 import { createSnapshot, appendJournal, getGood, listSnapshots, readSnapshot } from './snapshots.mjs';
 import { describeDiff, diffStates } from './diff.mjs';
-import { DshRunningError, restoreSnapshot, safeMode, undoLast } from './restore.mjs';
+import { DshRunningError, restoreSnapshot, safeMode, setBundles, undoLast } from './restore.mjs';
 import { isDshRunning, summarizeInstances } from './processes.mjs';
 import { createUi, formatTime, humanBytes, relativeTime } from './ui.mjs';
 import { resolveAppExecutable } from './app.mjs';
 import { DEFAULT_BOOT_TIMEOUT_MS, launchGuarded } from './launcher.mjs';
+import { DEFAULT_BISECT_ROUND_SECONDS, runBisect } from './bisect.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8'));
@@ -28,6 +29,7 @@ const VALUE_FLAGS = new Map([
   ['--asar', 'asar'],
   ['--app', 'app'],
   ['--boot-timeout', 'bootTimeout'],
+  ['--round-timeout', 'roundTimeout'],
   ['--retention', 'retention'],
   ['-m', 'label'],
   ['--message', 'label'],
@@ -53,6 +55,7 @@ const USAGE = `dsh-rescue ${PACKAGE.version} —— DSH 插件配置急救工具
 
 命令:
   launch              看门狗启动：N 秒没就绪就杀掉、回滚到上次可用、再试一次
+  bisect              二分定位是哪个插件害的（自动启停，跑完还原配置）
   status              总览：体检 + 最近崩溃 + 与上次可用状态的差异
   doctor              只做静态体检（有错误时退出码 1）
   save                给当前状态打一份快照
@@ -74,6 +77,7 @@ const USAGE = `dsh-rescue ${PACKAGE.version} —— DSH 插件配置急救工具
   --asar <app.asar>    额外读一个安装包（比如 DSH NEXT 的），用来解析它内置的 bundle
   --app <可执行文件>  要启动的 DSH 应用（默认自动找）
   --boot-timeout <秒> 看门狗等多久算卡死，默认 90
+  --round-timeout <秒> 二分时每轮等多久，默认 60
   --no-auto-restore   卡死时只杀不回滚（默认会回滚到最近 good）
   --retention <数量>   非 good 快照保留多少个，默认 30
   --json               机器可读输出
@@ -828,10 +832,176 @@ async function cmdLaunch(ctx) {
   };
 }
 
+async function cmdBisect(ctx) {
+  const { ui } = ctx;
+  const app = resolveAppExecutable({
+    app: ctx.options.app,
+    env: ctx.env,
+    platform: ctx.io.platform,
+    asarPaths: ctx.asarPaths,
+  });
+
+  if (ctx.instances.main + ctx.instances.next > 0) {
+    if (!ctx.json) {
+      ui.line(ui.yellow('二分要反复启动/杀掉 DSH，先把它关掉。'));
+      ui.line(ui.kv('实例', `主应用 ${ctx.instances.main} / NEXT ${ctx.instances.next}`));
+    }
+    return { code: 1, data: { ok: false, reason: 'already-running', instances: ctx.instances } };
+  }
+
+  const current = captureState({ home: ctx.layout.home, profile: ctx.layout.profile, layout: ctx.layout });
+  const packageFile = current.files.find((file) => file.key === 'profilePackage');
+  if (!packageFile || !packageFile.exists) {
+    if (!ctx.json) ui.line(ui.red('找不到 profile 的 package.json。'));
+    return { code: 1, data: { ok: false, reason: 'no-profile' } };
+  }
+  const parsed = parseProfile(packageFile.text);
+  const dependencies = parsed.dependencies;
+  // Only user-installed bundles are suspects; shipped and app-provided ones are
+  // part of the baseline.
+  const suspects = parsed.bundles.filter((name) => Object.hasOwn(dependencies, name));
+  const base = parsed.bundles.filter((name) => !suspects.includes(name));
+  const original = parsed.bundles;
+
+  if (suspects.length < 2) {
+    if (!ctx.json) {
+      ui.line(ui.yellow(`依赖里只有 ${suspects.length} 个插件装在 bundles 里，没得二分。`));
+      ui.line(`  ${ui.dim('要么直接 dsh-rescue safe-mode 试，要么手工一个个关。')}`);
+    }
+    return { code: 1, data: { ok: false, reason: 'too-few-candidates', suspects } };
+  }
+
+  const roundSeconds = ctx.options.roundTimeout === undefined ? DEFAULT_BISECT_ROUND_SECONDS : Number(ctx.options.roundTimeout);
+  if (!Number.isFinite(roundSeconds) || roundSeconds <= 0) throw new UsageError('--round-timeout 需要一个正整数（秒）');
+
+  if (!ctx.json) {
+    ui.line(`可执行文件 ${app.path}`);
+    ui.line(ui.kv('候选', `${suspects.length} 个第三方插件（${suspects.join('、')}）`));
+    ui.line(ui.kv('基线', `${base.length} 个不动的 bundle`));
+    ui.line(ui.kv('每轮', `最多等 ${roundSeconds} 秒；大概 ${Math.ceil(Math.log2(suspects.length)) + 2} 轮`));
+    ui.line('');
+    ui.line(ui.yellow('注意：开关应用会重复启停，每次失败都会杀掉进程。跑完会还原成现在的配置。'));
+    ui.line('');
+  }
+
+  if (ctx.options.dryRun) {
+    if (!ctx.json) ui.line('演练模式：不会真的启动。');
+    return { code: 0, data: { ok: true, dryRun: true, suspects, base, roundSeconds } };
+  }
+
+  if (!(await confirm(`要开始吗？会启停 DSH 约 ${Math.ceil(Math.log2(suspects.length)) + 2} 次。`, ctx))) {
+    if (!ctx.json) ui.line('已取消（非交互环境请加 --yes）。');
+    return { code: 1, data: { ok: false, reason: 'cancelled' } };
+  }
+
+  const notRunning = () => ({ known: true, names: [] });
+  const orderFor = (members) => original.filter((name) => base.includes(name) || members.includes(name));
+  let round = 0;
+
+  const test = async (members) => {
+    round += 1;
+    setBundles({
+      layout: ctx.layout,
+      bundles: orderFor(members),
+      force: true,
+      detector: notRunning,
+      preKind: 'pre-bisect',
+      preLabel: `bisect 第 ${round} 轮：${members.length} 个候选`,
+      journalAction: 'bisect-round',
+      retention: ctx.retention,
+    });
+    if (!ctx.json) ui.write(`  第 ${round} 次 · 加载 ${members.length} 个候选 … `);
+    const result = await launchGuarded({
+      executable: app.path,
+      platform: ctx.io.platform,
+      env: ctx.env,
+      exec: ctx.io.exec,
+      spawnImpl: ctx.io.spawn,
+      sleep: ctx.io.sleep,
+      now: ctx.io.now,
+      probe: ctx.io.probe ? (info) => ctx.io.probe(info) : null,
+      bootTimeoutMs: roundSeconds * 1000,
+      maxAttempts: 1,
+      killOnSuccess: true,
+    });
+    if (!ctx.json) {
+      ui.line(result.ok ? ui.green('起来了') : ui.red(`卡住（${result.reason}）`));
+    }
+    return result.ok;
+  };
+
+  let result;
+  try {
+    result = await runBisect({
+      bundles: original,
+      isCandidate: (name) => suspects.includes(name),
+      test,
+    });
+  } finally {
+    setBundles({
+      layout: ctx.layout,
+      bundles: original,
+      force: true,
+      detector: notRunning,
+      preKind: 'pre-bisect',
+      preLabel: 'bisect 收尾：还原原始配置',
+      journalAction: 'bisect-restore',
+      retention: ctx.retention,
+    });
+  }
+
+  appendJournal(ctx.layout, {
+    action: 'bisect',
+    snapshotId: null,
+    preSnapshotId: null,
+    written: [],
+    culprit: result.culprit ?? null,
+    reason: result.reason,
+    rounds: result.rounds.length,
+  });
+
+  if (!ctx.json) {
+    ui.line('');
+    if (result.ok) {
+      ui.line(`${ui.bold('元凶')}：${ui.red(result.culprit)}`);
+      ui.line(ui.kv('轮数', `${result.rounds.length} 次启停`));
+      ui.line('');
+      ui.line(`${ui.bold('下一步')}：`);
+      ui.line(`  · 临时关掉它：往 cordis.patch.yml 追加 ${ui.cyan('- id: <行 id>')} + ${ui.cyan('disabled: true')}（按行 id 关，不是包名）`);
+      ui.line(`  · 彻底移除：${ui.cyan(`dsh plugin --profile ${ctx.layout.profile} remove ${result.culprit}`)}`);
+      ui.line(`  · 只是它版本不对：升级它，或用 ${ui.cyan('dsh plugin allow-version')} 显式豁免`);
+      ui.line(`  · 配置已还原成你原来的样子，放心`);
+    } else if (result.reason === 'baseline-boots') {
+      ui.line(ui.yellow('现在这套配置本来就是能起来的 —— 没什么可二分。'));
+      ui.line(ui.kv('提示', '如果故障是时有时无，先 dsh-rescue good 记住它，等真坏了再跑一次'));
+    } else if (result.reason === 'without-candidates-also-fails') {
+      ui.line(ui.yellow('把第三方插件全关掉也起不来 —— 问题不在这些插件身上。'));
+      ui.line(ui.kv('下一步', 'dsh-rescue crash 看崩溃报告；dsh-rescue doctor 查空 patch / 版本闸门'));
+    } else if (result.reason === 'too-few-candidates') {
+      ui.line(ui.yellow('候选太少，没法二分。'));
+    } else {
+      ui.line(ui.yellow(`二分没走完（${result.reason}）。`));
+    }
+  }
+
+  return {
+    code: result.ok ? 0 : 1,
+    data: {
+      ok: result.ok,
+      culprit: result.culprit ?? null,
+      reason: result.reason,
+      suspects,
+      rounds: result.rounds.length,
+      trace: result.rounds,
+    },
+  };
+}
+
 async function cmdMenu(ctx) {
   const { ui } = ctx;
   const items = [
     ['launch', '看门狗启动（超时自动回滚）'],
+    ['bisect', '二分定位是哪个插件害的'],
     ['status', '体检 + 最近崩溃（只读）'],
     ['rescue', '一键回滚到上次可用'],
     ['good', '把当前状态记为可用'],
@@ -901,6 +1071,8 @@ async function runCommand(command, ctx) {
     case 'launch':
     case 'boot':
       return cmdLaunch(ctx);
+    case 'bisect':
+      return cmdBisect(ctx);
     case 'safe-mode':
       return cmdSafeMode(ctx);
     case 'undo':

@@ -81,6 +81,7 @@ export async function launchGuarded({
   intervalMs = DEFAULT_INTERVAL_MS,
   maxAttempts = 2,
   onFailure = null,
+  killOnSuccess = false,
   sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
   now = () => Date.now(),
   log = () => {},
@@ -112,12 +113,21 @@ export async function launchGuarded({
   });
 
   const last = children[children.length - 1];
-  if (result.ok && last && last.raw && typeof last.raw.unref === 'function') {
-    // Leave the app running after this process exits.
-    try {
-      last.raw.unref();
-    } catch {
-      /* not fatal */
+  if (result.ok && last) {
+    if (killOnSuccess && typeof last.kill === 'function') {
+      // The caller only wanted to know whether it boots.
+      try {
+        last.kill();
+      } catch {
+        /* already gone */
+      }
+    } else if (last.raw && typeof last.raw.unref === 'function') {
+      // Leave the app running after this process exits.
+      try {
+        last.raw.unref();
+      } catch {
+        /* not fatal */
+      }
     }
   }
   return { ...result, children };

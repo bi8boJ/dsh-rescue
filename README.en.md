@@ -100,7 +100,7 @@ dsh-rescue undo       # withdraw it once you are back in
 | `crash` | Parse the latest crash report: exit code, skipped bundles, version mismatches, entries stuck waiting for a service |
 | `menu` | Interactive menu (the `.cmd` default) |
 
-Options: `--home`, `--profile`, `--runtime`, `--asar`, `--app`, `--boot-timeout`, `--no-auto-restore`, `--json`, `--yes`, `--dry-run`, `--force`.
+Options: `--home`, `--profile`, `--runtime`, `--asar`, `--app`, `--boot-timeout`, `--round-timeout`, `--no-auto-restore`, `--json`, `--yes`, `--dry-run`, `--force`.
 
 The runtime version is read straight out of the installed `app.asar` (the same manifest DSH itself consults for its compatibility gate), so `dsh` does not need to be on `PATH`. If it cannot be found — an unusual install location — pass `--runtime <version>`, otherwise the version-gate check is skipped.
 
@@ -130,6 +130,24 @@ Two caveats:
 
 - It refuses to start a second instance — a watchdog only makes sense for a cold start.
 - "Ready" means "a DSH process is listening on loopback". That is the most reliable signal available from outside; if you know a better one, `--boot-timeout` is there to tune the wait.
+
+## Finding the culprit (bisect)
+
+Being rescued is only half the story. `bisect` finds out who broke it:
+
+```bash
+dsh-rescue bisect              # close DSH first
+dsh-rescue bisect --round-timeout 45 --yes
+```
+
+It first establishes two controls — "the current set really does fail" and "only the baseline bundles really does boot" — then loads half the suspects at a time, starting and stopping DSH once per round, halving the range each time. Four suspects take two or three rounds.
+
+Hard rules:
+
+- **It always puts your original `dsh.profile.bundles` back**, including when a round throws (`finally`).
+- Refuses to run while DSH is up: it needs to start and kill the app repeatedly.
+- It assumes **one** culprit. With several, it converges on one of them; close that and run it again.
+- If even "all third-party off" fails to boot, it says so and points at `crash` / `doctor` instead.
 
 ## Safety guarantees
 
@@ -171,7 +189,7 @@ Crash logs are looked up in both:
 ## Development
 
 ```bash
-node --test                                            # 189 tests, all on synthetic homes
+node --test                                            # 202 tests, all on synthetic homes
 DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # two extra read-only checks on the real home
 ```
 
