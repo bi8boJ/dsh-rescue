@@ -45,7 +45,7 @@ dsh-rescue 补的就是这三件事：**可逆、能覆盖挂死场景、绝不�
 
 ```bash
 # 直接从仓库用
-git clone https://github.com/<you>/dsh-rescue.git
+git clone https://github.com/bi8boJ/dsh-rescue.git
 node dsh-rescue/bin/dsh-rescue.mjs status
 
 # 或者全局装

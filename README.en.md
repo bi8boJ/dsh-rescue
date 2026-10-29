@@ -43,7 +43,7 @@ dsh-rescue closes those three gaps: reversible, works for the hang case, never w
 Requires Node.js 20+.
 
 ```bash
-git clone https://github.com/<you>/dsh-rescue.git
+git clone https://github.com/bi8boJ/dsh-rescue.git
 node dsh-rescue/bin/dsh-rescue.mjs status
 
 # or
