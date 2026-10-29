@@ -31,6 +31,7 @@ const VALUE_FLAGS = new Map([
   ['--app', 'app'],
   ['--boot-timeout', 'bootTimeout'],
   ['--round-timeout', 'roundTimeout'],
+  ['--store', 'store'],
   ['--retention', 'retention'],
   ['-m', 'label'],
   ['--message', 'label'],
@@ -80,6 +81,7 @@ const USAGE = `dsh-rescue ${PACKAGE.version} —— DSH 插件配置急救工具
   --app <可执行文件>  要启动的 DSH 应用（默认自动找）
   --boot-timeout <秒> 看门狗等多久算卡死，默认 90
   --round-timeout <秒> 二分时每轮等多久，默认 60
+  --store <路径>      pnpm store 的位置（体检用；默认按平台和 pnpm 全局配置推断）
   --no-auto-restore   卡死时只杀不回滚（默认会回滚到最近 good）
   --retention <数量>   非 good 快照保留多少个，默认 30
   --json               机器可读输出

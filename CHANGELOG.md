@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0
+
+**把踩过的坑变成一条体检项**
+
+`dsh plugin add` 突然全报 `ERR_PNPM_UNEXPECTED_STORE`，原因是 `node_modules/.modules.yaml` 里记着依赖来自一个已经不存在的 store（profile 搬过盘、没重装）。当时应用照常能开，只有装插件会失败，很容易误判成"插件坏了"。
+
+- 新增 `src/pnpmmeta.mjs`：读 `.modules.yaml`，比对 `storeDir`（会认 pnpm 全局配置里的 `storeDir`）与 `virtualStoreDir`（应等于 `<profile>/node_modules/.pnpm`）
+- 新 finding：`store.mismatch` / `store.virtualMismatch`（error）、`store.meta.missing` / `store.meta.unreadable` / `store.meta.incomplete`（info / warn）
+- `--store <路径>` 可手工指定期望的 store，合法的自定义 store 不会误报
+- `status --json` 的 `summary.store` 能看到「记的是哪、应该是哪」
+- 230 个用例（新增 12 个：跨盘不符、虚拟 store 不符、config 覆盖、`--store` 优先、缺文件、坏 JSON、字段缺失、doctor 集成）
+
 ## 0.4.0
 
 **启动信标：不用再靠人记着按 good**

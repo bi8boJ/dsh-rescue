@@ -6,6 +6,7 @@ import { analyzePatch } from './yamlpatch.mjs';
 import { satisfies } from './semver-lite.mjs';
 import { readText } from './fsx.mjs';
 import { nextMarkers, readFromAsar, resolveAppPackage } from './installation.mjs';
+import { checkPnpmStore } from './pnpmmeta.mjs';
 
 const DSH_PREFIX = '@deepseek-ai/dsh';
 
@@ -129,6 +130,7 @@ export function runDoctor({
   knownIds = null,
   asarPaths = [],
   instances = null,
+  storeDir = null,
 } = {}) {
   const resolved = layout ?? resolveLayout({ home, profile });
   const findings = [];
@@ -388,6 +390,9 @@ export function runDoctor({
     );
   }
 
+  const storeCheck = checkPnpmStore({ profileDir: resolved.profileDir, storeDir });
+  for (const finding of storeCheck.findings) findings.push(finding);
+
   const errorsCount = findings.filter((finding) => finding.level === 'error').length;
   const warningsCount = findings.filter((finding) => finding.level === 'warn').length;
   const infosCount = findings.filter((finding) => finding.level === 'info').length;
@@ -411,6 +416,14 @@ export function runDoctor({
       bundlesList: bundleNames,
       appBundles: findings.filter((finding) => finding.code === 'bundle.fromApp').length,
       instances: instances ?? null,
+      store: storeCheck.meta
+        ? {
+            recorded: storeCheck.meta.storeDir ?? null,
+            virtual: storeCheck.meta.virtualStoreDir ?? null,
+            expected: storeCheck.expected.root,
+            expectedSource: storeCheck.expected.source,
+          }
+        : null,
     },
     state: captured,
     layout: resolved,

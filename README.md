@@ -1,237 +1,184 @@
 # dsh-rescue
 
-DSH（DeepSeek Harness）被插件搞到**打不开**或者**崩溃**的时候，用一条命令把它救回来，而且不丢东西。
-
-零依赖 Node CLI，跑在应用外面——因为 DSH 起不来的时候，任何装在 DSH 里面的东西也一起起不来。
-
+DSH锛圖eepSeek Harness锛夎鎻掍欢鎼炲埌**鎵撲笉寮€**鎴栬€?*宕╂簝**鐨勬椂鍊欙紝鐢ㄤ竴鏉″懡浠ゆ妸瀹冩晳鍥炴潵锛岃€屼笖涓嶄涪涓滆タ銆?
+闆朵緷璧?Node CLI锛岃窇鍦ㄥ簲鐢ㄥ闈⑩€斺€斿洜涓?DSH 璧蜂笉鏉ョ殑鏃跺€欙紝浠讳綍瑁呭湪 DSH 閲岄潰鐨勪笢瑗夸篃涓€璧疯捣涓嶆潵銆?
 ```console
 $ dsh-rescue rescue
-将回到 20261029T101010123Z-9f3e（2 小时前标记为可用）
-确认还原？会先把当前现场完整存一份。 [y/N] y
-完成：已还原到 20261029T101010123Z-9f3e
-写回    profiles/desktop/package.json, profiles/desktop/cordis.patch.yml
-还原前现场 20261029T154130001Z-77ab
-撤回    dsh-rescue restore 20261029T154130001Z-77ab
+灏嗗洖鍒?20261029T101010123Z-9f3e锛? 灏忔椂鍓嶆爣璁颁负鍙敤锛?纭杩樺師锛熶細鍏堟妸褰撳墠鐜板満瀹屾暣瀛樹竴浠姐€?[y/N] y
+瀹屾垚锛氬凡杩樺師鍒?20261029T101010123Z-9f3e
+鍐欏洖    profiles/desktop/package.json, profiles/desktop/cordis.patch.yml
+杩樺師鍓嶇幇鍦?20261029T154130001Z-77ab
+鎾ゅ洖    dsh-rescue restore 20261029T154130001Z-77ab
 
-相对上次可用状态，坏掉时的现场是这样：
-  新增 bundle：dsh-某个新插件
-  依赖版本变化：dsh-better-sidebar ^0.28.0 → ^0.29.0
-  patch 新增条目：llm-pi-ai
-  以上差异已被撤销。
+鐩稿涓婃鍙敤鐘舵€侊紝鍧忔帀鏃剁殑鐜板満鏄繖鏍凤細
+  鏂板 bundle锛歞sh-鏌愪釜鏂版彃浠?  渚濊禆鐗堟湰鍙樺寲锛歞sh-better-sidebar ^0.28.0 鈫?^0.29.0
+  patch 鏂板鏉＄洰锛歭lm-pi-ai
+  浠ヤ笂宸紓宸茶鎾ら攢銆?
+鏍￠獙锛氬綋鍓嶉厤缃笌 good 閫愬瓧鑺備竴鑷?鉁?```
 
-校验：当前配置与 good 逐字节一致 ✓
+## 涓轰粈涔堥渶瑕佸畠
+
+DSH 鑷甫涓€鍗婃晳鎻达紝浣嗛偅涓€鍗婃湁涓や釜娲烇紙閮借兘鍦?`app.asar` 閲岃鍒颁緷鎹級锛?
+**1. 鑷甫鐨?绂佺敤绗笁鏂规彃浠?鏄笉鍙€嗙殑涓€鍒€鍒囥€?*
+瀹夸富鑷村懡宕╂簝鏃朵細寮瑰師鐢熷璇濇锛岀涓変釜鎸夐挳璧?`sanitizeProfile()`锛氭妸 `cordis.patch.yml` 鏀瑰悕鎴?`.bak-<姣>` 澶囦唤锛岀劧鍚庢妸 `package.json` 閲岀殑 `dsh.profile.bundles` **鐩存帴瑕嗗啓鎴愬嚭鍘傛ā鏉?*銆?`.bak` 鍙繚浣忎簡 patch 鏂囦欢鈥斺€?*"鎴戝師鏈惎鐢ㄤ簡鍝簺鎻掍欢銆佷粈涔堥『搴?杩欐潯淇℃伅娌℃湁浠讳綍澶囦唤**锛岃姘镐箙瑕嗙洊銆備綘鏁戝洖鏉ヤ簡锛屼絾鎭㈠涓嶅埌鍘熸牱銆?
+**2. 鐪熸鐨勩€屾墦涓嶅紑銆嶅畠鏍规湰鏁戜笉鍒般€?*
+`DesktopHostProcess.start()` 鐨?`readyPromise` 鍙瓑瀛愯繘绋嬪彂 `ready` 鎴栭€€鍑猴紝**娌℃湁瓒呮椂**銆?鎻掍欢鍦?`apply()` 閲屾寕浣忥紙姝诲惊鐜€乣await` 姘镐笉杩斿洖銆佺瓑涓€涓案杩滀笉浼氬嚭鐜扮殑鏈嶅姟锛夋椂锛孍lectron 鏃犻檺绛夊緟锛?*娌℃湁绐楀彛銆佹病鏈夊穿婧冩姤鍛娿€佽繛閭ｄ釜鎭㈠瀵硅瘽妗嗛兘涓嶄細鍑虹幇**銆備綘鍙兘寮烘潃銆佸啀鍚姩銆佸啀鎸傘€?
+**3. 绌虹殑 patch 鏂囦欢姣斿潖鐨勬洿绯熴€?*
+`dsh-app-boot` 鐨勬枃妗ｅ啓寰楀緢娓呮锛氱┖鎴栧彧鏈夋敞閲婄殑 `cordis.patch.yml` 浼氳鍚姩**鐩存帴澶辫触**鈥斺€旇鍋滅敤杩欎竴灞傚繀椤诲啓 `[]`銆傛墍浠?椤烘墜娓呯┖涓€涓?鏄妸鑷繁寰€鍚姩澶辫触涓婃帹銆?
+**4. 涓诲簲鐢ㄥ拰 DSH NEXT 鍏辩敤鍚屼竴浠?profile銆?*
+NEXT 浼氭妸 `dsh.desktopNext*` 閿啓杩涘悓涓€涓?`package.json`锛岃繕棰濆鐢?`desktop-next.*.patch.json` 鍋?overlay锛屽苟鑷甫鍑犱釜 bundle锛坄dsh-community-market`銆乣@agents-anywhere/dsh-bridge-next`锛夈€?涓や釜搴旂敤**鍚屾椂寮€鐫€**灏辨槸涓や釜瀹夸富銆佷袱濂?HMR銆佹瘡涓彃浠朵袱浠藉疄渚嬶紝鍚勮嚜寰€鍚屼竴鎵圭姸鎬佹枃浠堕噷鍐欌€斺€?鎻掍欢涓€鐩村湪鎶㈡枃浠?澶氬崐灏辨槸杩欎釜銆傝€屼笖杩欐椂鐐规仮澶嶆寜閽紝鍙︿竴涓疄渚嬭繕鍦ㄦ敼鍚屼竴浠介厤缃€?
+dsh-rescue 琛ョ殑灏辨槸杩欏洓浠朵簨锛?*鍙€嗐€佽兘瑕嗙洊鎸傛鍦烘櫙銆佺粷涓嶅啓绌?patch銆佽寰?NEXT 鐨勭棔杩广€?*
+
+## 鍜?DSH NEXT 涓€璧风敤
+
+- **鍚屼竴鏃堕棿鍙紑涓€涓簲鐢ㄣ€?* `doctor` 浼氬湪涓や釜鍚屾椂杩愯鏃剁粰鍑?`instances.dualHome` 璀﹀憡銆?- **鏁戜箣鍓嶆妸涓や釜閮藉叧鎺夈€?* 鍚﹀垯宸ュ叿浼氭嫆缁濆啓锛坄--force` 鍙秺杩囷級銆?- bundle 瑙ｆ瀽浼氬悓鏃剁湅涓や釜瀹夎鍖咃細NEXT 鍐呯疆鐨勯偅涓や釜涓嶄細琚鎶ユ垚"娌¤"銆?- 杩樺師杈冩棭鐨勫揩鐓у彲鑳戒細鍘绘帀 NEXT 鐨?`desktopNext*` 閿€斺€擿rescue` 浼氬綋鍦烘彁绀猴紱NEXT 涓嬫鍚姩涓€鑸細琛ュ洖锛屼絾 bundle 椤哄簭鍙兘鍙樸€?- 瑁呭湪闈炴爣鍑嗕綅缃椂锛堟瘮濡?`D:\deepseek harness\DSH NEXT`锛夛紝涓€鑸笉鐢ㄧ锛氬伐鍏蜂細浠?NEXT 鍐欒繘 profile 鐨?overlay 閲屽弽鎺ㄥ畠鐨勫畨瑁呬綅缃紱瀹炲湪涓嶈鍔?`--asar <璺緞>`銆?
+## 瑁呮彃浠剁獊鐒跺叏搴燂紵鍏堢湅杩欎竴鏉?
+`dsh plugin add` / `update` 寮€濮嬫姤
+
+```
+ERR_PNPM_UNEXPECTED_STORE
+ERR_PNPM_UNEXPECTED_VIRTUAL_STORE
 ```
 
-## 为什么需要它
+閭ｄ笉鏄彃浠跺潖浜嗭紝鏄?pnpm 鐨勮璐﹂敊浣嶏細`node_modules/.modules.yaml` 閲岃鐫€銆屼緷璧栨潵鑷煇涓?store銆嶏紝鑰岄偅涓?store 宸茬粡鎼蛋鎴栧垹鎺変簡銆傚吀鍨嬭捣鍥犳槸鎶?profile 鎼埌鍒殑鐩橈紙鎴栨惉杩囧幓鍙堟惉鍥炴潵锛夊嵈娌￠噸瑁?`node_modules`銆?
+楹荤儲鐨勬槸**搴旂敤鐓у父鑳藉紑**锛屽彧鏈夎鎻掍欢浼氬け璐ワ紝寰堝鏄撹璇垽鎴愬埆鐨勯棶棰樸€俙dsh-rescue doctor` 鐜板湪浼氱洿鎺ョ偣鍚嶏細
 
-DSH 自带一半救援，但那一半有两个洞（都能在 `app.asar` 里读到依据）：
+```
+脳 store.mismatch  pnpm 璁扮潃渚濊禆鏉ヨ嚜 D:\DSH\pnpm-store\v11锛岃€屽綋鍓?store 鏄?C:\...\pnpm\store
+    鈫?鐜板湪浠讳綍 dsh plugin add/update 閮戒細鎶?ERR_PNPM_UNEXPECTED_STORE
+脳 store.virtualMismatch  pnpm 璁扮潃铏氭嫙 store 鍦?D:\...\node_modules\.pnpm锛岃€屽畠搴旇鍦ㄨ繖閲岋細C:\...\node_modules\.pnpm
+```
 
-**1. 自带的"禁用第三方插件"是不可逆的一刀切。**
-宿主致命崩溃时会弹原生对话框，第三个按钮走 `sanitizeProfile()`：把 `cordis.patch.yml` 改名成 `.bak-<毫秒>` 备份，然后把 `package.json` 里的 `dsh.profile.bundles` **直接覆写成出厂模板**。
-`.bak` 只保住了 patch 文件——**"我原本启用了哪些插件、什么顺序"这条信息没有任何备份**，被永久覆盖。你救回来了，但恢复不到原样。
+淇硶灏辨槸璁?`.modules.yaml` 閲岀殑涓や釜璺緞鍥炲埌鐪熷疄浣嶇疆锛堢劧鍚庤窇涓€娆?`pnpm install` 璁╁畠鑷唇锛夈€傛鏌ヤ細璁?pnpm 鍏ㄥ眬閰嶇疆閲岀殑 `storeDir`锛屼篃鍙互鐢?`--store <璺緞>` 鎵嬪伐鎸囧畾鈥斺€斿悎娉曠殑鑷畾涔?store 涓嶄細琚鎶ャ€?
+## 瀹夎
 
-**2. 真正的「打不开」它根本救不到。**
-`DesktopHostProcess.start()` 的 `readyPromise` 只等子进程发 `ready` 或退出，**没有超时**。
-插件在 `apply()` 里挂住（死循环、`await` 永不返回、等一个永远不会出现的服务）时，Electron 无限等待：**没有窗口、没有崩溃报告、连那个恢复对话框都不会出现**。你只能强杀、再启动、再挂。
-
-**3. 空的 patch 文件比坏的更糟。**
-`dsh-app-boot` 的文档写得很清楚：空或只有注释的 `cordis.patch.yml` 会让启动**直接失败**——要停用这一层必须写 `[]`。所以"顺手清空一下"是把自己往启动失败上推。
-
-**4. 主应用和 DSH NEXT 共用同一份 profile。**
-NEXT 会把 `dsh.desktopNext*` 键写进同一个 `package.json`，还额外用 `desktop-next.*.patch.json` 做 overlay，并自带几个 bundle（`dsh-community-market`、`@agents-anywhere/dsh-bridge-next`）。
-两个应用**同时开着**就是两个宿主、两套 HMR、每个插件两份实例，各自往同一批状态文件里写——"插件一直在抢文件"多半就是这个。而且这时点恢复按钮，另一个实例还在改同一份配置。
-
-dsh-rescue 补的就是这四件事：**可逆、能覆盖挂死场景、绝不写空 patch、认得 NEXT 的痕迹。**
-
-## 和 DSH NEXT 一起用
-
-- **同一时间只开一个应用。** `doctor` 会在两个同时运行时给出 `instances.dualHome` 警告。
-- **救之前把两个都关掉。** 否则工具会拒绝写（`--force` 可越过）。
-- bundle 解析会同时看两个安装包：NEXT 内置的那两个不会被误报成"没装"。
-- 还原较早的快照可能会去掉 NEXT 的 `desktopNext*` 键——`rescue` 会当场提示；NEXT 下次启动一般会补回，但 bundle 顺序可能变。
-- 装在非标准位置时（比如 `D:\deepseek harness\DSH NEXT`），一般不用管：工具会从 NEXT 写进 profile 的 overlay 里反推它的安装位置；实在不行加 `--asar <路径>`。
-
-## 安装
-
-需要 Node.js 20+。三种方式，任选：
+闇€瑕?Node.js 20+銆備笁绉嶆柟寮忥紝浠婚€夛細
 
 ```bash
-# 直接从仓库用
+# 鐩存帴浠庝粨搴撶敤
 git clone https://github.com/bi8boJ/dsh-rescue.git
 node dsh-rescue/bin/dsh-rescue.mjs status
 
-# 或者全局装
-npm install -g .
+# 鎴栬€呭叏灞€瑁?npm install -g .
 
-# Windows：双击 bin\dsh-rescue.cmd 就是交互菜单，
-# 它会自己去找 PATH 上的 node，找不到就用 DSH 自带的那个。
-```
+# Windows锛氬弻鍑?bin\dsh-rescue.cmd 灏辨槸浜や簰鑿滃崟锛?# 瀹冧細鑷繁鍘绘壘 PATH 涓婄殑 node锛屾壘涓嶅埌灏辩敤 DSH 鑷甫鐨勯偅涓€?```
 
-> 装 DSH 的机器上 `node` 常常不在 PATH 上（DSH 自带运行时但没导出）。`bin/dsh-rescue.cmd` 与 `bin/dsh-rescue.sh` 会自动去常见位置找，也可以用 `DSH_RESCUE_NODE` 直接指定。
-
-## 60 秒上手
-
+> 瑁?DSH 鐨勬満鍣ㄤ笂 `node` 甯稿父涓嶅湪 PATH 涓婏紙DSH 鑷甫杩愯鏃朵絾娌″鍑猴級銆俙bin/dsh-rescue.cmd` 涓?`bin/dsh-rescue.sh` 浼氳嚜鍔ㄥ幓甯歌浣嶇疆鎵撅紝涔熷彲浠ョ敤 `DSH_RESCUE_NODE` 鐩存帴鎸囧畾銆?
+## 60 绉掍笂鎵?
 ```bash
-# 1. DSH 正常的时候，先记一次"这个状态是好的"
+# 1. DSH 姝ｅ父鐨勬椂鍊欙紝鍏堣涓€娆?杩欎釜鐘舵€佹槸濂界殑"
 dsh-rescue good
 
-# 2. 哪天它起不来了（或者起来了但明显不对劲）
-dsh-rescue status     # 体检 + 最近崩溃 + 跟上次好状态的差异
-dsh-rescue rescue     # 一键回到上次可用，先存现场再还原
+# 2. 鍝ぉ瀹冭捣涓嶆潵浜嗭紙鎴栬€呰捣鏉ヤ簡浣嗘槑鏄句笉瀵瑰姴锛?dsh-rescue status     # 浣撴 + 鏈€杩戝穿婧?+ 璺熶笂娆″ソ鐘舵€佺殑宸紓
+dsh-rescue rescue     # 涓€閿洖鍒颁笂娆″彲鐢紝鍏堝瓨鐜板満鍐嶈繕鍘?
+# 杩樻病鏍囪杩?good锛熷厛鐢ㄥ彲閫嗙殑瀹夊叏妯″紡
+dsh-rescue safe-mode  # 鍙暀鍑哄巶 bundle锛岀涓夋柟鍏ㄤ笉鍔犺浇
+dsh-rescue undo       # 璧锋潵涔嬪悗涓€娆℃€ф挙鍥?```
 
-# 还没标记过 good？先用可逆的安全模式
-dsh-rescue safe-mode  # 只留出厂 bundle，第三方全不加载
-dsh-rescue undo       # 起来之后一次性撤回
-```
+`good` 涔嬪墠寤鸿鍏堣窇涓€娆?`dsh-rescue doctor`锛涗綋妫€涓嶈繃鏃?`good` 浼氭嫆缁濓紙鍙互鐢?`--force` 寮鸿锛屼絾閭ｇ瓑浜庢妸鍧忕姸鎬佸綋閫€璺級銆?
+## 鍛戒护
 
-`good` 之前建议先跑一次 `dsh-rescue doctor`；体检不过时 `good` 会拒绝（可以用 `--force` 强记，但那等于把坏状态当退路）。
-
-## 命令
-
-| 命令 | 作用 |
+| 鍛戒护 | 浣滅敤 |
 |---|---|
-| `launch` | 看门狗启动：N 秒没就绪就杀掉、回滚到上次可用、再试一次 |
-| `bisect` | 二分定位是哪个插件害的（自动启停，跑完还原配置） |
-| `status` | 总览：静态体检 + 最近一次崩溃的事实 + 与上次可用状态的差异 |
-| `doctor` | 只做静态体检，有错误时退出码 1（适合放进脚本/CI） |
-| `good` | 把当前状态标记为"已知可用"（体检不过会拒绝） |
-| `save` | 打一份普通快照（改插件前手动留档） |
-| `rescue` | 一键救援：存现场 → 回到最近 good → 报告撤销了什么 → 校验逐字节一致 |
-| `restore <ref>` | 还原任意快照；`ref` 支持 `last` / `good` / 完整 id / id 前缀 |
-| `safe-mode` | 只保留 `@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`，第三方全部不加载 |
-| `undo` | 撤回上一次写操作（靠 journal 里的前置快照） |
-| `list` | 快照列表，标出 good 指针 |
-| `diff [a] [b]` | 两个状态的差异，默认 `good → 当前` |
-| `crash` | 解析最近一次崩溃报告，抽出退出码、被跳过的 bundle、版本不兼容项、一直等不到服务的 entry |
-| `menu` | 交互菜单（双击 `.cmd` 时默认走这里） |
+| `launch` | 鐪嬮棬鐙楀惎鍔細N 绉掓病灏辩华灏辨潃鎺夈€佸洖婊氬埌涓婃鍙敤銆佸啀璇曚竴娆?|
+| `bisect` | 浜屽垎瀹氫綅鏄摢涓彃浠跺鐨勶紙鑷姩鍚仠锛岃窇瀹岃繕鍘熼厤缃級 |
+| `status` | 鎬昏锛氶潤鎬佷綋妫€ + 鏈€杩戜竴娆″穿婧冪殑浜嬪疄 + 涓庝笂娆″彲鐢ㄧ姸鎬佺殑宸紓 |
+| `doctor` | 鍙仛闈欐€佷綋妫€锛屾湁閿欒鏃堕€€鍑虹爜 1锛堥€傚悎鏀捐繘鑴氭湰/CI锛?|
+| `good` | 鎶婂綋鍓嶇姸鎬佹爣璁颁负"宸茬煡鍙敤"锛堜綋妫€涓嶈繃浼氭嫆缁濓級 |
+| `save` | 鎵撲竴浠芥櫘閫氬揩鐓э紙鏀规彃浠跺墠鎵嬪姩鐣欐。锛?|
+| `rescue` | 涓€閿晳鎻达細瀛樼幇鍦?鈫?鍥炲埌鏈€杩?good 鈫?鎶ュ憡鎾ら攢浜嗕粈涔?鈫?鏍￠獙閫愬瓧鑺備竴鑷?|
+| `restore <ref>` | 杩樺師浠绘剰蹇収锛沗ref` 鏀寔 `last` / `good` / 瀹屾暣 id / id 鍓嶇紑 |
+| `safe-mode` | 鍙繚鐣?`@deepseek-ai/dsh-base` + `@deepseek-ai/dsh-web-app`锛岀涓夋柟鍏ㄩ儴涓嶅姞杞?|
+| `undo` | 鎾ゅ洖涓婁竴娆″啓鎿嶄綔锛堥潬 journal 閲岀殑鍓嶇疆蹇収锛?|
+| `list` | 蹇収鍒楄〃锛屾爣鍑?good 鎸囬拡 |
+| `diff [a] [b]` | 涓や釜鐘舵€佺殑宸紓锛岄粯璁?`good 鈫?褰撳墠` |
+| `crash` | 瑙ｆ瀽鏈€杩戜竴娆″穿婧冩姤鍛婏紝鎶藉嚭閫€鍑虹爜銆佽璺宠繃鐨?bundle銆佺増鏈笉鍏煎椤广€佷竴鐩寸瓑涓嶅埌鏈嶅姟鐨?entry |
+| `menu` | 浜や簰鑿滃崟锛堝弻鍑?`.cmd` 鏃堕粯璁よ蛋杩欓噷锛?|
 
-通用选项：
-
+閫氱敤閫夐」锛?
 ```
---home <目录>       DSH_HOME，默认 $DSH_HOME 或 ~/.dsh
---profile <名字>    profile 名，默认 desktop
---runtime <版本>    直接指定 DSH 运行时版本（跳过探测）
---asar <路径>       额外读一个 app.asar（比如 DSH NEXT 的），用来解析它内置的 bundle
---app <可执行文件>  要启动的 DSH 应用（默认自动找）
---boot-timeout <秒> 看门狗等多久算卡死，默认 90
---round-timeout <秒> 二分时每轮等多久，默认 60
---no-auto-restore   卡死时只杀不回滚（默认会回滚到最近 good）
---json              机器可读输出
---yes               跳过确认
---dry-run           只打印计划，不写任何文件
---force             DSH 在跑也照写 / 体检不过也标记 good
+--home <鐩綍>       DSH_HOME锛岄粯璁?$DSH_HOME 鎴?~/.dsh
+--profile <鍚嶅瓧>    profile 鍚嶏紝榛樿 desktop
+--runtime <鐗堟湰>    鐩存帴鎸囧畾 DSH 杩愯鏃剁増鏈紙璺宠繃鎺㈡祴锛?--asar <璺緞>       棰濆璇讳竴涓?app.asar锛堟瘮濡?DSH NEXT 鐨勶級锛岀敤鏉ヨВ鏋愬畠鍐呯疆鐨?bundle
+--app <鍙墽琛屾枃浠?  瑕佸惎鍔ㄧ殑 DSH 搴旂敤锛堥粯璁よ嚜鍔ㄦ壘锛?--boot-timeout <绉? 鐪嬮棬鐙楃瓑澶氫箙绠楀崱姝伙紝榛樿 90
+--round-timeout <绉? 浜屽垎鏃舵瘡杞瓑澶氫箙锛岄粯璁?60
+--no-auto-restore   鍗℃鏃跺彧鏉€涓嶅洖婊氾紙榛樿浼氬洖婊氬埌鏈€杩?good锛?--json              鏈哄櫒鍙杈撳嚭
+--yes               璺宠繃纭
+--dry-run           鍙墦鍗拌鍒掞紝涓嶅啓浠讳綍鏂囦欢
+--force             DSH 鍦ㄨ窇涔熺収鍐?/ 浣撴涓嶈繃涔熸爣璁?good
 ```
 
-运行时版本会自动从安装目录的 `app.asar` 里读（和 DSH 自己做版本闸门时读的是同一份清单），所以不需要 `dsh` 在 PATH 上；真的读不到（比如装到了非常规位置）就用 `--runtime <版本>` 指定，否则版本闸门那一项会跳过。
+杩愯鏃剁増鏈細鑷姩浠庡畨瑁呯洰褰曠殑 `app.asar` 閲岃锛堝拰 DSH 鑷繁鍋氱増鏈椄闂ㄦ椂璇荤殑鏄悓涓€浠芥竻鍗曪級锛屾墍浠ヤ笉闇€瑕?`dsh` 鍦?PATH 涓婏紱鐪熺殑璇讳笉鍒帮紙姣斿瑁呭埌浜嗛潪甯歌浣嶇疆锛夊氨鐢?`--runtime <鐗堟湰>` 鎸囧畾锛屽惁鍒欑増鏈椄闂ㄩ偅涓€椤逛細璺宠繃銆?
+## 璁╂瘡娆″惎鍔ㄩ兘鍙椾繚鎶わ紙鐪嬮棬鐙楋級
 
-## 让每次启动都受保护（看门狗）
-
-`rescue` 要你自己发现"打不开了"。但有一种坏法**连对话框都不会出现**：插件卡在 `apply()` 里，宿主永远不报 ready，Electron 就一直等——没窗口、没崩溃报告、没有可点的按钮。
-
-`launch` 就是为这个准备的：
-
+`rescue` 瑕佷綘鑷繁鍙戠幇"鎵撲笉寮€浜?銆備絾鏈変竴绉嶅潖娉?*杩炲璇濇閮戒笉浼氬嚭鐜?*锛氭彃浠跺崱鍦?`apply()` 閲岋紝瀹夸富姘歌繙涓嶆姤 ready锛孍lectron 灏变竴鐩寸瓑鈥斺€旀病绐楀彛銆佹病宕╂簝鎶ュ憡銆佹病鏈夊彲鐐圭殑鎸夐挳銆?
+`launch` 灏辨槸涓鸿繖涓噯澶囩殑锛?
 ```bash
-dsh-rescue launch              # 90 秒内没就绪 = 卡死
+dsh-rescue launch              # 90 绉掑唴娌″氨缁?= 鍗℃
 dsh-rescue launch --boot-timeout 120
-dsh-rescue launch --no-auto-restore   # 只杀不救
+dsh-rescue launch --no-auto-restore   # 鍙潃涓嶆晳
 ```
 
-它做的事：启动 DSH → 每秒看一次"应用是不是真的在 loopback 上监听并对外服务了" → 超时就 `taskkill /T` 连子进程一起杀掉 → 回滚到最近 `good` → 再启动一次 → 还不行就停下并告诉你怎么继续（不会无限重试）。
-
-想日常都用：把桌面快捷方式改成
-
+瀹冨仛鐨勪簨锛氬惎鍔?DSH 鈫?姣忕鐪嬩竴娆?搴旂敤鏄笉鏄湡鐨勫湪 loopback 涓婄洃鍚苟瀵瑰鏈嶅姟浜? 鈫?瓒呮椂灏?`taskkill /T` 杩炲瓙杩涚▼涓€璧锋潃鎺?鈫?鍥炴粴鍒版渶杩?`good` 鈫?鍐嶅惎鍔ㄤ竴娆?鈫?杩樹笉琛屽氨鍋滀笅骞跺憡璇変綘鎬庝箞缁х画锛堜笉浼氭棤闄愰噸璇曪級銆?
+鎯虫棩甯搁兘鐢細鎶婃闈㈠揩鎹锋柟寮忔敼鎴?
 ```
 "...\dsh-rescue\bin\dsh-rescue.cmd" launch
 ```
 
-（双击 `bin\dsh-rescue.cmd` 不带参数仍然是交互菜单，第一项就是 `launch`。）
+锛堝弻鍑?`bin\dsh-rescue.cmd` 涓嶅甫鍙傛暟浠嶇劧鏄氦浜掕彍鍗曪紝绗竴椤瑰氨鏄?`launch`銆傦級
 
-两条注意：
+涓ゆ潯娉ㄦ剰锛?
+- 宸茬粡鏈変竴涓疄渚嬪湪璺戞椂瀹冧細鎷掔粷鍚姩绗簩涓€斺€旂湅闂ㄧ嫍鍙"浠庨浂鍚姩"鏈夋剰涔夈€?- 鍒ゅ畾"灏辩华"鐨勪緷鎹槸銆屾湁 DSH 杩涚▼鍦?loopback 涓婄洃鍚€嶃€傝繖鏄粠澶栭潰鑳芥嬁鍒扮殑鏈€鍙潬鐨勪俊鍙凤紱濡傛灉浣犵煡閬撴洿濂界殑鍒ゆ嵁锛宍--boot-timeout` 璋冨埌鑲夌溂鍙帴鍙楃殑绛夊緟鏃堕棿涔熻兘鐢ㄥ緱绋炽€?
+## 鍚姩淇℃爣锛堝彲閫夌殑灏忔彃浠讹級
 
-- 已经有一个实例在跑时它会拒绝启动第二个——看门狗只对"从零启动"有意义。
-- 判定"就绪"的依据是「有 DSH 进程在 loopback 上监听」。这是从外面能拿到的最可靠的信号；如果你知道更好的判据，`--boot-timeout` 调到肉眼可接受的等待时间也能用得稳。
-
-## 启动信标（可选的小插件）
-
-`good` 要你记得按。想让这件事自动一点，装仓库里那个小插件：
+`good` 瑕佷綘璁板緱鎸夈€傛兂璁╄繖浠朵簨鑷姩涓€鐐癸紝瑁呬粨搴撻噷閭ｄ釜灏忔彃浠讹細
 
 ```bash
-dsh plugin --profile desktop add file:<本仓库>/plugin
+dsh plugin --profile desktop add file:<鏈粨搴?/plugin
 ```
 
-它做的事只有一件：宿主 apply 时往 `<DSH_HOME>/rescue/beacon.json` 写 `booting`，60 秒后改成 `ok`，并记下当时的 bundle 列表哈希。于是：
+瀹冨仛鐨勪簨鍙湁涓€浠讹細瀹夸富 apply 鏃跺線 `<DSH_HOME>/rescue/beacon.json` 鍐?`booting`锛?0 绉掑悗鏀规垚 `ok`锛屽苟璁颁笅褰撴椂鐨?bundle 鍒楄〃鍝堝笇銆備簬鏄細
 
 ```bash
-dsh-rescue good --auto     # 信标说这套配置确实起过才标记，否则告诉你为什么不行
-dsh-rescue status          # 多一行：启动信标：成功启动 · 12 分钟前 · 配置与当前一致
-```
+dsh-rescue good --auto     # 淇℃爣璇磋繖濂楅厤缃‘瀹炶捣杩囨墠鏍囪锛屽惁鍒欏憡璇変綘涓轰粈涔堜笉琛?dsh-rescue status          # 澶氫竴琛岋細鍚姩淇℃爣锛氭垚鍔熷惎鍔?路 12 鍒嗛挓鍓?路 閰嶇疆涓庡綋鍓嶄竴鑷?```
 
-它**不影响启动**：所有写入包在 try/catch 里，路径在调用时解析，原子写。不想要了就 `dsh plugin --profile desktop remove dsh-rescue-beacon`。
-
-## 定位是哪个插件害的（bisect）
-
-救回来之后还有个问题：到底是谁干的。`bisect` 用二分法把它揪出来：
+瀹?*涓嶅奖鍝嶅惎鍔?*锛氭墍鏈夊啓鍏ュ寘鍦?try/catch 閲岋紝璺緞鍦ㄨ皟鐢ㄦ椂瑙ｆ瀽锛屽師瀛愬啓銆備笉鎯宠浜嗗氨 `dsh plugin --profile desktop remove dsh-rescue-beacon`銆?
+## 瀹氫綅鏄摢涓彃浠跺鐨勶紙bisect锛?
+鏁戝洖鏉ヤ箣鍚庤繕鏈変釜闂锛氬埌搴曟槸璋佸共鐨勩€俙bisect` 鐢ㄤ簩鍒嗘硶鎶婂畠鎻嚭鏉ワ細
 
 ```bash
-dsh-rescue bisect              # 需要先关掉 DSH
+dsh-rescue bisect              # 闇€瑕佸厛鍏虫帀 DSH
 dsh-rescue bisect --round-timeout 45 --yes
 ```
 
-它做的事：先确认「现在这套确实起不来」「只留基线 bundle 确实能起来」两个对照，然后把候选插件一半一半地加载，每轮自动启停一次 DSH，按「起得来 / 卡住」把范围砍半。4 个候选只要 2~3 轮，十几分钟到几分钟不等。
+瀹冨仛鐨勪簨锛氬厛纭銆岀幇鍦ㄨ繖濂楃‘瀹炶捣涓嶆潵銆嶃€屽彧鐣欏熀绾?bundle 纭疄鑳借捣鏉ャ€嶄袱涓鐓э紝鐒跺悗鎶婂€欓€夋彃浠朵竴鍗婁竴鍗婂湴鍔犺浇锛屾瘡杞嚜鍔ㄥ惎鍋滀竴娆?DSH锛屾寜銆岃捣寰楁潵 / 鍗′綇銆嶆妸鑼冨洿鐮嶅崐銆? 涓€欓€夊彧瑕?2~3 杞紝鍗佸嚑鍒嗛挓鍒板嚑鍒嗛挓涓嶇瓑銆?
+鍑犳潯纭害鏉燂細
 
-几条硬约束：
-
-- **跑完一定还原**成你原来的 `dsh.profile.bundles`，中途出错也一样（`finally`）。
-- DSH 开着时拒绝执行——它要反复启停，不能和你正在用的实例抢。
-- 假设**只有一个**元凶。真的有多个时，它会收敛到其中一个，然后你把它关掉再跑一次。
-- 如果「全关掉第三方也起不来」，它会直接说问题不在插件上，让你去 `crash` / `doctor`。
-
-## 它是怎么保证"不丢东西"的
-
-- **写之前先存证。** 任何写操作都会先打一份前置快照（`pre-restore` / `pre-rescue` / `pre-undo` / `pre-safe-mode`），坏现场永远还在。
-- **被覆盖的文件留副本。** 快照里不存在的文件若当前存在，是改名成 `.pre-<时间戳>` 而不是删除。
-- **逐字节还原。** 还原后会自动重算哈希跟快照比对，不相等会明确告诉你。
-- **运行中拒绝写。** 检测到 DSH 正在运行就拒绝（`dsh-hmr` 会当场热应用，可能把好的也弄坏）；确实要写加 `--force`。
-- **快照自身坏了也不硬来。** 快照缺文件、或里面的 `package.json` 是坏 JSON 时，拒绝用它还原。
-
-## 快照存在哪
-
+- **璺戝畬涓€瀹氳繕鍘?*鎴愪綘鍘熸潵鐨?`dsh.profile.bundles`锛屼腑閫斿嚭閿欎篃涓€鏍凤紙`finally`锛夈€?- DSH 寮€鐫€鏃舵嫆缁濇墽琛屸€斺€斿畠瑕佸弽澶嶅惎鍋滐紝涓嶈兘鍜屼綘姝ｅ湪鐢ㄧ殑瀹炰緥鎶€?- 鍋囪**鍙湁涓€涓?*鍏冨嚩銆傜湡鐨勬湁澶氫釜鏃讹紝瀹冧細鏀舵暃鍒板叾涓竴涓紝鐒跺悗浣犳妸瀹冨叧鎺夊啀璺戜竴娆°€?- 濡傛灉銆屽叏鍏虫帀绗笁鏂逛篃璧蜂笉鏉ャ€嶏紝瀹冧細鐩存帴璇撮棶棰樹笉鍦ㄦ彃浠朵笂锛岃浣犲幓 `crash` / `doctor`銆?
+## 瀹冩槸鎬庝箞淇濊瘉"涓嶄涪涓滆タ"鐨?
+- **鍐欎箣鍓嶅厛瀛樿瘉銆?* 浠讳綍鍐欐搷浣滈兘浼氬厛鎵撲竴浠藉墠缃揩鐓э紙`pre-restore` / `pre-rescue` / `pre-undo` / `pre-safe-mode`锛夛紝鍧忕幇鍦烘案杩滆繕鍦ㄣ€?- **琚鐩栫殑鏂囦欢鐣欏壇鏈€?* 蹇収閲屼笉瀛樺湪鐨勬枃浠惰嫢褰撳墠瀛樺湪锛屾槸鏀瑰悕鎴?`.pre-<鏃堕棿鎴?` 鑰屼笉鏄垹闄ゃ€?- **閫愬瓧鑺傝繕鍘熴€?* 杩樺師鍚庝細鑷姩閲嶇畻鍝堝笇璺熷揩鐓ф瘮瀵癸紝涓嶇浉绛変細鏄庣‘鍛婅瘔浣犮€?- **杩愯涓嫆缁濆啓銆?* 妫€娴嬪埌 DSH 姝ｅ湪杩愯灏辨嫆缁濓紙`dsh-hmr` 浼氬綋鍦虹儹搴旂敤锛屽彲鑳芥妸濂界殑涔熷紕鍧忥級锛涚‘瀹炶鍐欏姞 `--force`銆?- **蹇収鑷韩鍧忎簡涔熶笉纭潵銆?* 蹇収缂烘枃浠躲€佹垨閲岄潰鐨?`package.json` 鏄潖 JSON 鏃讹紝鎷掔粷鐢ㄥ畠杩樺師銆?
+## 蹇収瀛樺湪鍝?
 ```
 <DSH_HOME>/rescue/
-  snapshots/<id>/snapshot.json      元数据（bundles 清单、每个文件的哈希）
-  snapshots/<id>/installed.json     当时装了哪些包、什么版本
-  snapshots/<id>/files/...          5 个配置文件的原文
-  good.json                         指向最近一次 good
-  journal.json                      最近 50 次写操作
+  snapshots/<id>/snapshot.json      鍏冩暟鎹紙bundles 娓呭崟銆佹瘡涓枃浠剁殑鍝堝笇锛?  snapshots/<id>/installed.json     褰撴椂瑁呬簡鍝簺鍖呫€佷粈涔堢増鏈?  snapshots/<id>/files/...          5 涓厤缃枃浠剁殑鍘熸枃
+  good.json                         鎸囧悜鏈€杩戜竴娆?good
+  journal.json                      鏈€杩?50 娆″啓鎿嶄綔
 ```
 
-默认保留最近 30 个非 good 快照，good 永不被回收（`--retention` 可调）。配置文件都是几 KB，不用担心占地方。
+榛樿淇濈暀鏈€杩?30 涓潪 good 蹇収锛実ood 姘镐笉琚洖鏀讹紙`--retention` 鍙皟锛夈€傞厤缃枃浠堕兘鏄嚑 KB锛屼笉鐢ㄦ媴蹇冨崰鍦版柟銆?
+## 瀹冧笉鍋氫粈涔?
+- **涓嶅惎鍔ㄣ€佷笉瀹堟姢 DSH銆?* 鑷姩鐪嬮棬鐙楋紙鍚姩瓒呮椂灏辨潃 + 鑷姩鍥炴粴锛夊湪 v0.2銆?- **涓嶅姩 `node_modules`銆?* 鍖呯湡缂轰簡鍙姤鍛?+ 缁欏懡浠わ紝涓嶄唬瑁呫€佷笉鑱旂綉銆?- **涓嶇浼氳瘽銆佸伐浣滃尯銆佽蹇嗗簱銆?* 鍙閭?5 涓彃浠堕厤缃枃浠躲€?- **涓嶉噸鎺?YAML銆?* 鍙拷鍔犺锛屾敞閲婂拰 `!!js` 琛ㄨ揪寮忓師鏍蜂繚鐣欍€?- **涓嶇寽璇箟銆?* 鏌愪釜 entry 宸插瓨鍦ㄤ絾娌″啓 `disabled` 鏃讹紝瀹冧笉浼氭浛浣犳敼锛岃€屾槸鍛婅瘔浣犳墜鏀广€?
+## 骞冲彴
 
-## 它不做什么
-
-- **不启动、不守护 DSH。** 自动看门狗（启动超时就杀 + 自动回滚）在 v0.2。
-- **不动 `node_modules`。** 包真缺了只报告 + 给命令，不代装、不联网。
-- **不碰会话、工作区、记忆库。** 只碰那 5 个插件配置文件。
-- **不重排 YAML。** 只追加行，注释和 `!!js` 表达式原样保留。
-- **不猜语义。** 某个 entry 已存在但没写 `disabled` 时，它不会替你改，而是告诉你手改。
-
-## 平台
-
-Windows 是实测平台（DSH Desktop 的主场）。macOS / Linux 的路径与崩溃日志目录都实现了，但**未在真机验证**——如果你在上面跑通了或者踩到坑，欢迎提 issue。
-
-崩溃日志目录会同时看这两处：
-- `%APPDATA%\@deepseek-ai\dsh-desktop\logs`（或 macOS/Linux 的等价位置）
-- `<DSH_HOME>\electron-user-data\logs`（DSH NEXT 用的那套）
-
-## 开发
-
+Windows 鏄疄娴嬪钩鍙帮紙DSH Desktop 鐨勪富鍦猴級銆俶acOS / Linux 鐨勮矾寰勪笌宕╂簝鏃ュ織鐩綍閮藉疄鐜颁簡锛屼絾**鏈湪鐪熸満楠岃瘉**鈥斺€斿鏋滀綘鍦ㄤ笂闈㈣窇閫氫簡鎴栬€呰俯鍒板潙锛屾杩庢彁 issue銆?
+宕╂簝鏃ュ織鐩綍浼氬悓鏃剁湅杩欎袱澶勶細
+- `%APPDATA%\@deepseek-ai\dsh-desktop\logs`锛堟垨 macOS/Linux 鐨勭瓑浠蜂綅缃級
+- `<DSH_HOME>\electron-user-data\logs`锛圖SH NEXT 鐢ㄧ殑閭ｅ锛?
+## 寮€鍙?
 ```bash
-node --test          # 218 个用例，全部跑在临时目录的合成 home 上
-DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # 额外跑两个真实机器只读检查
-```
+node --test          # 218 涓敤渚嬶紝鍏ㄩ儴璺戝湪涓存椂鐩綍鐨勫悎鎴?home 涓?DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # 棰濆璺戜袱涓湡瀹炴満鍣ㄥ彧璇绘鏌?```
 
-设计文档在 [docs/design.md](docs/design.md)。
-
+璁捐鏂囨。鍦?[docs/design.md](docs/design.md)銆?
 ## License
 
 MIT
