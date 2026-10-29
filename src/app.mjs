@@ -65,5 +65,6 @@ export function resolveAppExecutable({ app = null, env = process.env, platform =
 }
 
 export function exeNameOf(executablePath) {
-  return path.basename(String(executablePath ?? ''));
+  // Both separators: the name must survive a Windows path on a POSIX runner.
+  return String(executablePath ?? '').split(/[\\/]/).pop();
 }

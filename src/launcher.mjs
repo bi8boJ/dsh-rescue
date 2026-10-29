@@ -1,5 +1,4 @@
 import { execFileSync, spawn } from 'node:child_process';
-import path from 'node:path';
 
 import { runLaunchWatchdog } from './bootwatch.mjs';
 import { isAppReady } from './netprobe.mjs';
@@ -56,7 +55,9 @@ export function makeLauncher({
 }
 
 export function makeProbe({ executable, platform = process.platform, exec } = {}) {
-  const exeName = path.basename(String(executable ?? ''));
+  // Split on both separators: a Windows path must still yield the image name when
+  // the code runs on Linux (that is exactly what CI does).
+  const exeName = String(executable ?? '').split(/[\\/]/).pop();
   return () => {
     try {
       return isAppReady({ exeName, platform, ...(exec ? { exec } : {}) });
