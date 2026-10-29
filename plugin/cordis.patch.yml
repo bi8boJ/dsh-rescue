@@ -1,0 +1,6 @@
+# dsh-rescue-beacon —— DSH bundle patch
+# 只挂一行：宿主 apply 之后它会在 <DSH_HOME>/rescue/beacon.json 里留下启动证据。
+# 安装：dsh plugin --profile desktop add file:<本目录的绝对路径>
+- insert:
+    - id: rescue-beacon
+      name: dsh-rescue-beacon

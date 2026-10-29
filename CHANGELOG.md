@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+**启动信标：不用再靠人记着按 good**
+
+仓库里多了一个可选的小插件 `plugin/`（包名 `dsh-rescue-beacon`，约 100 行）：宿主 apply 时往 `<DSH_HOME>/rescue/beacon.json` 写 `booting`，60 秒后改写 `ok`，并记下当时的 bundle 列表哈希。
+
+- `dsh-rescue good --auto`：只有信标说「这套配置确实起过且活过阈值」才标记，否则明确告诉你为什么不行（没装插件 / 还在 booting / 配置已经变了）
+- `dsh-rescue status` 多一行「启动信标：成功启动 · 12 分钟前 · 配置与当前一致」
+- 插件不该影响启动：所有写入都包在 try/catch 里，路径在调用时解析（`DSH_PROFILE_DIR` → cwd → `<DSH_HOME>/profiles/*`），临时文件 + rename 原子写
+- 218 个用例（新增 beacon 11 个 + 命令层 5 个；其中一条专门断言 CLI 与插件的 `bundlesHash` 算法完全一致——否则信标永远对不上）
+
 ## 0.3.0
 
 **二分定位：救回来之后，还得知道是谁干的**

@@ -102,6 +102,12 @@ restore   safe-mode undo      list    diff    crash    menu
 
 候选的定义是"在 `dependencies` 里且出现在 `bundles` 里"：出厂 bundle 与 `app.asar` 内置的（NEXT 的 `dsh-community-market` 等）属于基线，不参与二分，避免把应用自己的组件当嫌疑人。
 
+### 5.3 启动信标（可选插件）
+
+`good` 依赖人记得按。仓库里 `plugin/` 是一个约 100 行的小插件（包名 `dsh-rescue-beacon`），宿主 apply 时往 `<DSH_HOME>/rescue/beacon.json` 写 `booting`，60 秒后改成 `ok` 并记下 bundle 列表哈希；`dsh-rescue good --auto` 只在「信标说这套配置确实起过、且哈希与当前一致」时才标记。
+
+两条设计约束：**不能影响启动**（所有写入 try/catch，原子写，路径在调用时解析，因为模块加载时固化路径会导致测试/自定义 DSH_HOME 写错地方——这条是被测试抓出来后改的）；**哈希算法两端必须逐字节一致**（CLI 与插件各有一份实现，有一条测试专门断言它们一致，否则信标永远对不上）。
+
 ## 6. 体检项
 
 按"能否静态判定"排序：

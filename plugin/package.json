@@ -1,0 +1,26 @@
+{
+  "name": "dsh-rescue-beacon",
+  "version": "0.1.0",
+  "description": "Writes a boot beacon for dsh-rescue: proves which plugin set actually started and stayed up.",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js"
+  },
+  "files": [
+    "lib",
+    "cordis.patch.yml"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/dsh": ">=0.2.0-rc.1 <0.3.0"
+  },
+  "license": "MIT"
+}

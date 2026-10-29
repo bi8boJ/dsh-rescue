@@ -17,6 +17,7 @@ import { createUi, formatTime, humanBytes, relativeTime } from './ui.mjs';
 import { resolveAppExecutable } from './app.mjs';
 import { DEFAULT_BOOT_TIMEOUT_MS, launchGuarded } from './launcher.mjs';
 import { DEFAULT_BISECT_ROUND_SECONDS, runBisect } from './bisect.mjs';
+import { describeBeacon } from './beacon.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8'));
@@ -43,6 +44,7 @@ const BOOL_FLAGS = new Map([
   ['--dry-run', 'dryRun'],
   ['--force', 'force'],
   ['--no-auto-restore', 'noAutoRestore'],
+  ['--auto', 'auto'],
   ['--help', 'help'],
   ['-h', 'help'],
   ['--version', 'version'],
@@ -300,6 +302,18 @@ async function cmdStatus(ctx) {
       ui.line('');
     }
 
+    const beacon = describeBeacon({ layout: ctx.layout, bundles: doctor.summary.bundlesList });
+    if (beacon.found) {
+      const when = beacon.readyAt ?? beacon.startedAt;
+      const stateText =
+        beacon.state === 'ok' ? ui.green('成功启动') : ui.yellow('未确认（进程没活过阈值，或上次没走完）');
+      ui.line(
+        `启动信标：${stateText}${when ? ` · ${relativeTime(when)}` : ''}` +
+          (beacon.hashMatches ? ` ${ui.green('· 配置与当前一致')}` : ` ${ui.dim('· 配置已变')}`),
+      );
+      ui.line('');
+    }
+
     if (!doctor.ok) {
       ui.line(`${ui.bold('建议下一步')}：修好上面带 × 的问题，或者 ${ui.cyan('dsh-rescue rescue')} 回到上次可用状态。`);
     } else if (diff && !diff.empty) {
@@ -322,6 +336,7 @@ async function cmdStatus(ctx) {
       summary: doctor.summary,
       crash: crash ? { path: crash.path, facts: crash.facts } : null,
       good: good ? { id: goodSnapshotId ?? good.snapshotId, at: good.at, diff: diff ? diff : null } : null,
+      beacon: describeBeacon({ layout: ctx.layout, bundles: doctor.summary.bundlesList }),
     },
   };
 }
@@ -377,6 +392,22 @@ async function cmdSave(ctx, kind = 'manual') {
       ui.line(`  确实要标记就加 ${ui.cyan('--force')}（不建议：你会把一个坏状态当成退路）。`);
     }
     return { code: 1, data: { ok: false, reason: 'doctor-failed', findings: doctor.findings } };
+  }
+  if (kind === 'good' && ctx.options.auto) {
+    const beacon = describeBeacon({ layout: ctx.layout, bundles: doctor.summary.bundlesList });
+    if (!beacon.found || beacon.state !== 'ok' || !beacon.hashMatches) {
+      const why = !beacon.found
+        ? '找不到 beacon.json（多半是没装 dsh-rescue-beacon）'
+        : beacon.state !== 'ok'
+          ? '信标还停在 booting（进程还没活过阈值，或者上次没走完）'
+          : '信标记录的配置和当前不一样（装/卸过插件？）';
+      if (!ctx.json) {
+        ui.line(ui.yellow(`--auto 没用上：${why}。`));
+        ui.line(`  手动跑一次 ${ui.cyan('dsh-rescue good')} 即可。`);
+      }
+      return { code: 1, data: { ok: false, reason: 'beacon-mismatch', beacon, why } };
+    }
+    if (!ctx.json) ui.line(ui.dim(`信标：这批配置在 ${relativeTime(beacon.readyAt)} 成功启动过，直接记下。`));
   }
   const snapshot = createSnapshot({
     home: ctx.layout.home,

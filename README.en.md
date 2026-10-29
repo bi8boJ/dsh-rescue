@@ -131,6 +131,23 @@ Two caveats:
 - It refuses to start a second instance — a watchdog only makes sense for a cold start.
 - "Ready" means "a DSH process is listening on loopback". That is the most reliable signal available from outside; if you know a better one, `--boot-timeout` is there to tune the wait.
 
+## Boot beacon (optional tiny plugin)
+
+`good` relies on you remembering to press it. To make that automatic, install the plugin in `plugin/`:
+
+```bash
+dsh plugin --profile desktop add file:<this repo>/plugin
+```
+
+It does one thing: on apply it writes `booting` to `<DSH_HOME>/rescue/beacon.json`, flips it to `ok` after 60 seconds, and records the hash of the bundle list it booted with. Then:
+
+```bash
+dsh-rescue good --auto     # only marks when the beacon proves this config actually booted
+dsh-rescue status          # one more line: beacon: started · 12 minutes ago · config matches
+```
+
+It **cannot break a boot**: every write is wrapped, paths resolve at call time, and writes are atomic. Remove with `dsh plugin --profile desktop remove dsh-rescue-beacon`.
+
 ## Finding the culprit (bisect)
 
 Being rescued is only half the story. `bisect` finds out who broke it:
@@ -189,7 +206,7 @@ Crash logs are looked up in both:
 ## Development
 
 ```bash
-node --test                                            # 202 tests, all on synthetic homes
+node --test                                            # 218 tests, all on synthetic homes
 DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # two extra read-only checks on the real home
 ```
 

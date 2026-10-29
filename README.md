@@ -151,6 +151,23 @@ dsh-rescue launch --no-auto-restore   # 只杀不救
 - 已经有一个实例在跑时它会拒绝启动第二个——看门狗只对"从零启动"有意义。
 - 判定"就绪"的依据是「有 DSH 进程在 loopback 上监听」。这是从外面能拿到的最可靠的信号；如果你知道更好的判据，`--boot-timeout` 调到肉眼可接受的等待时间也能用得稳。
 
+## 启动信标（可选的小插件）
+
+`good` 要你记得按。想让这件事自动一点，装仓库里那个小插件：
+
+```bash
+dsh plugin --profile desktop add file:<本仓库>/plugin
+```
+
+它做的事只有一件：宿主 apply 时往 `<DSH_HOME>/rescue/beacon.json` 写 `booting`，60 秒后改成 `ok`，并记下当时的 bundle 列表哈希。于是：
+
+```bash
+dsh-rescue good --auto     # 信标说这套配置确实起过才标记，否则告诉你为什么不行
+dsh-rescue status          # 多一行：启动信标：成功启动 · 12 分钟前 · 配置与当前一致
+```
+
+它**不影响启动**：所有写入包在 try/catch 里，路径在调用时解析，原子写。不想要了就 `dsh plugin --profile desktop remove dsh-rescue-beacon`。
+
 ## 定位是哪个插件害的（bisect）
 
 救回来之后还有个问题：到底是谁干的。`bisect` 用二分法把它揪出来：
@@ -209,7 +226,7 @@ Windows 是实测平台（DSH Desktop 的主场）。macOS / Linux 的路径与�
 ## 开发
 
 ```bash
-node --test          # 202 个用例，全部跑在临时目录的合成 home 上
+node --test          # 218 个用例，全部跑在临时目录的合成 home 上
 DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # 额外跑两个真实机器只读检查
 ```
 
