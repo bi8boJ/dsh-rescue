@@ -86,6 +86,7 @@ dsh-rescue undo       # withdraw it once you are back in
 
 | Command | What it does |
 |---|---|
+| `launch` | Watchdog boot: if it is not ready within N seconds, kill it, roll back, retry once |
 | `status` | Checks + latest crash facts + drift from the last good state |
 | `doctor` | Static checks only; exit code 1 on errors (CI friendly) |
 | `good` | Mark the current state as known-good (refuses when checks fail) |
@@ -99,9 +100,36 @@ dsh-rescue undo       # withdraw it once you are back in
 | `crash` | Parse the latest crash report: exit code, skipped bundles, version mismatches, entries stuck waiting for a service |
 | `menu` | Interactive menu (the `.cmd` default) |
 
-Options: `--home`, `--profile`, `--runtime`, `--asar`, `--json`, `--yes`, `--dry-run`, `--force`.
+Options: `--home`, `--profile`, `--runtime`, `--asar`, `--app`, `--boot-timeout`, `--no-auto-restore`, `--json`, `--yes`, `--dry-run`, `--force`.
 
 The runtime version is read straight out of the installed `app.asar` (the same manifest DSH itself consults for its compatibility gate), so `dsh` does not need to be on `PATH`. If it cannot be found — an unusual install location — pass `--runtime <version>`, otherwise the version-gate check is skipped.
+
+## Protected boot (watchdog)
+
+`rescue` needs you to notice that the app will not open. But one failure mode produces **no dialog at all**: a plugin hangs inside `apply()`, the host never reports ready, and Electron waits forever — no window, no crash report, nothing to click.
+
+`launch` covers exactly that:
+
+```bash
+dsh-rescue launch                     # not ready within 90s = hung
+dsh-rescue launch --boot-timeout 120
+dsh-rescue launch --no-auto-restore   # kill only, do not roll back
+```
+
+It starts DSH, polls once a second for "is the app actually listening and serving on loopback?", and on timeout kills the whole process tree (`taskkill /T`), rolls back to the last `good`, and starts once more. If that also fails it stops and tells you what to do next — it never loops forever.
+
+To use it every day, point your desktop shortcut at:
+
+```
+"...\dsh-rescue\bin\dsh-rescue.cmd" launch
+```
+
+(Double-clicking `bin\dsh-rescue.cmd` without arguments still opens the menu; `launch` is its first entry.)
+
+Two caveats:
+
+- It refuses to start a second instance — a watchdog only makes sense for a cold start.
+- "Ready" means "a DSH process is listening on loopback". That is the most reliable signal available from outside; if you know a better one, `--boot-timeout` is there to tune the wait.
 
 ## Safety guarantees
 
@@ -143,7 +171,7 @@ Crash logs are looked up in both:
 ## Development
 
 ```bash
-node --test                                            # 145 tests, all on synthetic homes
+node --test                                            # 189 tests, all on synthetic homes
 DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # two extra read-only checks on the real home
 ```
 

@@ -74,12 +74,23 @@
 ## 5. 命令面
 
 ```
-status    doctor    save    good    rescue
-restore   safe-mode undo    list    diff    crash    menu
+launch    status    doctor    save    good    rescue
+restore   safe-mode undo      list    diff    crash    menu
 ```
 
 - `rescue` 没有 good 快照时的降级链：提示改用可逆的 `safe-mode` → 再用 `list` / `restore <id>` 逐个回退。永不静默删插件。
 - 所有写操作都进 `journal.json`，`undo` 撤回上一次。
+
+### 5.1 看门狗（launch）
+
+`rescue` 依赖人发现"打不开了"，但宿主卡死时连对话框都没有。`launch` 把"启动"这件事本身纳入保护：
+
+1. 启动应用（`--app` 或自动从 `resources/app.asar` 反推同目录的可执行文件）；
+2. 每秒探测一次就绪：**`netstat -ano` 里存在"图像名匹配 DSH 且地址是 loopback 的 LISTENING 行"** 才算起来了（实测健康实例 = `127.0.0.1:49862`）。这条判据的好处是不需要知道端口号，也不用读 Electron 内部状态；
+3. 超过 `--boot-timeout`（默认 90 秒）判定卡死 → `taskkill /PID <pid> /T /F` 杀整棵树（Electron 会派生宿主子进程，只杀父进程会留垃圾）→ 回滚到最近 `good` → 再启动一次；
+4. 两次都失败就停，打印 `crash` / `doctor` / `safe-mode` 三条下一步，**不无限重试**。
+
+刻意不做的：不判断"窗口是否出现"（不可靠且依赖平台），也不在检测到进程已退出时再 kill（已经没了）。所有副作用（spawn / probe / kill / sleep / now）都注入，所以状态机能在测试里完整跑一遍而不真的启停应用。
 
 ## 6. 体检项
 
@@ -107,5 +118,7 @@ restore   safe-mode undo    list    diff    crash    menu
 
 ## 8. 阶段
 
-- **v0.1**：本文全部命令 + 测试 + 中英 README
-- **v0.2**：blame/bisect（半自动二分）、boot beacon（可选小插件，自动把"这次真的起来了"写进 good）、自动看门狗启动器
+- **v0.1**：save / good / rescue / restore / safe-mode / undo / doctor / status / crash / diff + 测试 + 中英 README
+- **v0.1.1**：DSH NEXT 兼容（两种 asar 布局、跨安装包解析 bundle、`instances.dualHome` / `profile.sharedWithNext`）
+- **v0.2**：看门狗启动 `launch`（超时杀进程 + 回滚 + 重试一次），覆盖"宿主卡死、连对话框都没有"的场景
+- **v0.3（未做）**：blame/bisect（半自动二分定位元凶）、boot beacon（可选小插件，把"这次真的起来了"写进 good）

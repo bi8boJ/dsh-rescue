@@ -90,6 +90,7 @@ dsh-rescue undo       # 起来之后一次性撤回
 
 | 命令 | 作用 |
 |---|---|
+| `launch` | 看门狗启动：N 秒没就绪就杀掉、回滚到上次可用、再试一次 |
 | `status` | 总览：静态体检 + 最近一次崩溃的事实 + 与上次可用状态的差异 |
 | `doctor` | 只做静态体检，有错误时退出码 1（适合放进脚本/CI） |
 | `good` | 把当前状态标记为"已知可用"（体检不过会拒绝） |
@@ -110,6 +111,9 @@ dsh-rescue undo       # 起来之后一次性撤回
 --profile <名字>    profile 名，默认 desktop
 --runtime <版本>    直接指定 DSH 运行时版本（跳过探测）
 --asar <路径>       额外读一个 app.asar（比如 DSH NEXT 的），用来解析它内置的 bundle
+--app <可执行文件>  要启动的 DSH 应用（默认自动找）
+--boot-timeout <秒> 看门狗等多久算卡死，默认 90
+--no-auto-restore   卡死时只杀不回滚（默认会回滚到最近 good）
 --json              机器可读输出
 --yes               跳过确认
 --dry-run           只打印计划，不写任何文件
@@ -117,6 +121,33 @@ dsh-rescue undo       # 起来之后一次性撤回
 ```
 
 运行时版本会自动从安装目录的 `app.asar` 里读（和 DSH 自己做版本闸门时读的是同一份清单），所以不需要 `dsh` 在 PATH 上；真的读不到（比如装到了非常规位置）就用 `--runtime <版本>` 指定，否则版本闸门那一项会跳过。
+
+## 让每次启动都受保护（看门狗）
+
+`rescue` 要你自己发现"打不开了"。但有一种坏法**连对话框都不会出现**：插件卡在 `apply()` 里，宿主永远不报 ready，Electron 就一直等——没窗口、没崩溃报告、没有可点的按钮。
+
+`launch` 就是为这个准备的：
+
+```bash
+dsh-rescue launch              # 90 秒内没就绪 = 卡死
+dsh-rescue launch --boot-timeout 120
+dsh-rescue launch --no-auto-restore   # 只杀不救
+```
+
+它做的事：启动 DSH → 每秒看一次"应用是不是真的在 loopback 上监听并对外服务了" → 超时就 `taskkill /T` 连子进程一起杀掉 → 回滚到最近 `good` → 再启动一次 → 还不行就停下并告诉你怎么继续（不会无限重试）。
+
+想日常都用：把桌面快捷方式改成
+
+```
+"...\dsh-rescue\bin\dsh-rescue.cmd" launch
+```
+
+（双击 `bin\dsh-rescue.cmd` 不带参数仍然是交互菜单，第一项就是 `launch`。）
+
+两条注意：
+
+- 已经有一个实例在跑时它会拒绝启动第二个——看门狗只对"从零启动"有意义。
+- 判定"就绪"的依据是「有 DSH 进程在 loopback 上监听」。这是从外面能拿到的最可靠的信号；如果你知道更好的判据，`--boot-timeout` 调到肉眼可接受的等待时间也能用得稳。
 
 ## 它是怎么保证"不丢东西"的
 
@@ -158,7 +189,7 @@ Windows 是实测平台（DSH Desktop 的主场）。macOS / Linux 的路径与�
 ## 开发
 
 ```bash
-node --test          # 145 个用例，全部跑在临时目录的合成 home 上
+node --test          # 189 个用例，全部跑在临时目录的合成 home 上
 DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # 额外跑两个真实机器只读检查
 ```
 

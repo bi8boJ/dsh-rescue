@@ -9,11 +9,13 @@ import { collectKnownIds, runDoctor } from './doctor.mjs';
 import { detectRuntime, asarCandidates } from './runtime.mjs';
 import { asarFromProfileOverlays } from './installation.mjs';
 import { latestCrash } from './crash.mjs';
-import { createSnapshot, getGood, listSnapshots, readSnapshot } from './snapshots.mjs';
+import { createSnapshot, appendJournal, getGood, listSnapshots, readSnapshot } from './snapshots.mjs';
 import { describeDiff, diffStates } from './diff.mjs';
 import { DshRunningError, restoreSnapshot, safeMode, undoLast } from './restore.mjs';
 import { isDshRunning, summarizeInstances } from './processes.mjs';
 import { createUi, formatTime, humanBytes, relativeTime } from './ui.mjs';
+import { resolveAppExecutable } from './app.mjs';
+import { DEFAULT_BOOT_TIMEOUT_MS, launchGuarded } from './launcher.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PACKAGE = JSON.parse(fs.readFileSync(path.join(HERE, '..', 'package.json'), 'utf8'));
@@ -24,6 +26,8 @@ const VALUE_FLAGS = new Map([
   ['--runtime', 'runtime'],
   ['--dsh', 'dsh'],
   ['--asar', 'asar'],
+  ['--app', 'app'],
+  ['--boot-timeout', 'bootTimeout'],
   ['--retention', 'retention'],
   ['-m', 'label'],
   ['--message', 'label'],
@@ -36,6 +40,7 @@ const BOOL_FLAGS = new Map([
   ['-y', 'yes'],
   ['--dry-run', 'dryRun'],
   ['--force', 'force'],
+  ['--no-auto-restore', 'noAutoRestore'],
   ['--help', 'help'],
   ['-h', 'help'],
   ['--version', 'version'],
@@ -47,6 +52,7 @@ const USAGE = `dsh-rescue ${PACKAGE.version} —— DSH 插件配置急救工具
 用法: dsh-rescue <命令> [选项]
 
 命令:
+  launch              看门狗启动：N 秒没就绪就杀掉、回滚到上次可用、再试一次
   status              总览：体检 + 最近崩溃 + 与上次可用状态的差异
   doctor              只做静态体检（有错误时退出码 1）
   save                给当前状态打一份快照
@@ -66,6 +72,9 @@ const USAGE = `dsh-rescue ${PACKAGE.version} —— DSH 插件配置急救工具
   --runtime <版本>     直接指定 DSH 运行时版本（跳过探测）
   --dsh <可执行文件>   dsh CLI 路径（用于探测版本）
   --asar <app.asar>    额外读一个安装包（比如 DSH NEXT 的），用来解析它内置的 bundle
+  --app <可执行文件>  要启动的 DSH 应用（默认自动找）
+  --boot-timeout <秒> 看门狗等多久算卡死，默认 90
+  --no-auto-restore   卡死时只杀不回滚（默认会回滚到最近 good）
   --retention <数量>   非 good 快照保留多少个，默认 30
   --json               机器可读输出
   --yes                跳过确认
@@ -128,7 +137,8 @@ function makeContext({ command, positionals, options }, io, ui) {
   const layout = resolveLayout({ home: options.home, profile, env, platform: io.platform });
   const retention = options.retention === undefined ? undefined : Number(options.retention);
   const asarPaths = collectAsarPaths({ options, layout, env, platform: io.platform });
-  const instances = summarizeInstances(isDshRunning({ env, platform: io.platform }).names);
+  const detector = io.detector ?? (() => isDshRunning({ env, platform: io.platform }));
+  const instances = summarizeInstances(detector().names);
   let runtimeVersion = options.runtime ?? io.runtimeVersion ?? null;
   let runtimeSource = runtimeVersion ? 'flag' : null;
   if (!runtimeVersion) {
@@ -149,7 +159,7 @@ function makeContext({ command, positionals, options }, io, ui) {
     instances,
     retention: Number.isFinite(retention) ? retention : undefined,
     json: Boolean(options.json),
-    detector: io.detector ?? (() => isDshRunning({ env, platform: io.platform })),
+    detector,
     runtimeVersion,
     runtimeSource,
   };
@@ -678,9 +688,150 @@ async function cmdUndo(ctx) {
   return { code: 0, data: { ok: true, ...result } };
 }
 
+function failureText(reason) {
+  if (reason === 'timeout') return '一直没就绪（多半是某个插件卡在 apply() 里）';
+  if (reason === 'exited') return '自己退出了';
+  if (reason === 'launch-failed') return '没能启动';
+  return reason;
+}
+
+/**
+ * Watchdog boot: the only thing that can rescue a hang, because a hung host
+ * never shows a window or a dialog.
+ */
+async function cmdLaunch(ctx) {
+  const { ui } = ctx;
+  const app = resolveAppExecutable({
+    app: ctx.options.app,
+    env: ctx.env,
+    platform: ctx.io.platform,
+    asarPaths: ctx.asarPaths,
+  });
+
+  const alreadyRunning = ctx.instances.main + ctx.instances.next > 0;
+
+  const seconds = ctx.options.bootTimeout === undefined ? DEFAULT_BOOT_TIMEOUT_MS / 1000 : Number(ctx.options.bootTimeout);
+  if (!Number.isFinite(seconds) || seconds <= 0) throw new UsageError('--boot-timeout 需要一个正整数（秒）');
+  const bootTimeoutMs = Math.round(seconds * 1000);
+
+  const doctor = doctorFor(ctx);
+  const good = getGood(ctx.layout);
+  const autoRestore = !ctx.options.noAutoRestore;
+  const restoreTarget = autoRestore && good ? good.snapshotId : null;
+
+  if (!ctx.json) {
+    ui.line(`可执行文件 ${app.path}`);
+    ui.line(ui.kv('看门狗', `${seconds} 秒内没就绪就杀掉重来（最多 2 次）`));
+    ui.line(
+      ui.kv('回滚目标', restoreTarget ? `${restoreTarget}（${relativeTime(good.at)}）` : ui.yellow('没有 good 快照 —— 出问题只能杀，不能救')),
+    );
+    if (alreadyRunning) {
+      ui.line(ui.kv('注意', `现在有实例在跑（主应用 ${ctx.instances.main} / NEXT ${ctx.instances.next}），真启动会被拒绝`));
+    }
+    if (!doctor.ok) {
+      ui.line(ui.yellow(`启动前体检有 ${doctor.errorsCount} 个错误：`));
+      printFindings(ui, doctor.findings.filter((finding) => finding.level !== 'info'));
+    }
+    ui.line('');
+  }
+
+  if (ctx.options.dryRun) {
+    if (!ctx.json) ui.line('演练模式：不会真的启动。');
+    return {
+      code: 0,
+      data: { ok: true, dryRun: true, executable: app.path, bootTimeoutMs, restoreTarget, alreadyRunning },
+    };
+  }
+
+  if (alreadyRunning) {
+    if (!ctx.json) {
+      ui.line(ui.yellow('已经有一个 DSH 在运行，不再启动第二个。'));
+      ui.line(`  ${ui.dim('看门狗只对"从零启动"有意义。要用就先用着，要保护就先把它关掉。')}`);
+    }
+    return { code: 1, data: { ok: false, reason: 'already-running', instances: ctx.instances } };
+  }
+
+  const result = await launchGuarded({
+    executable: app.path,
+    platform: ctx.io.platform,
+    env: ctx.env,
+    exec: ctx.io.exec,
+    spawnImpl: ctx.io.spawn,
+    sleep: ctx.io.sleep,
+    now: ctx.io.now,
+    probe: ctx.io.probe ? (info) => ctx.io.probe(info) : null,
+    bootTimeoutMs,
+    onFailure: restoreTarget
+      ? async ({ attempt, reason }) => {
+          if (!ctx.json) {
+            ui.line(ui.yellow(`第 ${attempt} 次启动${failureText(reason)}，已杀掉；正在回滚到 ${restoreTarget}…`));
+          }
+          const restored = restoreSnapshot({
+            layout: ctx.layout,
+            ref: restoreTarget,
+            force: true,
+            detector: () => ({ known: true, names: [] }),
+            preKind: 'pre-restore',
+            preLabel: `before launch rollback (${reason})`,
+            journalAction: 'launch-rollback',
+            retention: ctx.retention,
+          });
+          if (!ctx.json) ui.line(ui.kv('已回滚', `${restored.snapshotId}（现场存于 ${restored.preSnapshotId}）`));
+          return { ok: true, snapshotId: restored.snapshotId, preSnapshotId: restored.preSnapshotId };
+        }
+      : null,
+  });
+
+  appendJournal(ctx.layout, {
+    action: 'launch',
+    snapshotId: restoreTarget,
+    preSnapshotId: null,
+    written: [],
+    launched: result.attempts.map((entry) => ({
+      attempt: entry.attempt,
+      ok: Boolean(entry.ok),
+      reason: entry.reason,
+      elapsedMs: entry.elapsedMs,
+      killed: Boolean(entry.killed),
+      restored: entry.restored && entry.restored.snapshotId ? entry.restored.snapshotId : null,
+    })),
+  });
+
+  if (!ctx.json) {
+    for (const entry of result.attempts) {
+      const head = entry.ok ? ui.green('启动成功') : ui.red(`启动失败（${failureText(entry.reason)}）`);
+      ui.line(`${head} · 第 ${entry.attempt} 次 · ${(entry.elapsedMs / 1000).toFixed(1)} 秒`);
+      if (entry.restored && entry.restored.snapshotId) ui.line(`  ${ui.dim(`已回滚到 ${entry.restored.snapshotId}`)}`);
+    }
+    ui.line('');
+    if (result.ok) {
+      ui.line(`DSH 已就绪，这个窗口可以关掉（应用在后台继续跑）。`);
+    } else {
+      ui.line(ui.red('两次都没起来，停止尝试 —— 再循环下去只会耗时间。'));
+      ui.line('');
+      ui.line(`${ui.bold('可以这样继续')}：`);
+      ui.line(`  1. ${ui.cyan('dsh-rescue crash')}      看最近一次崩溃报告到底说了什么`);
+      ui.line(`  2. ${ui.cyan('dsh-rescue doctor')}     静态体检（版本闸门、空 patch、依赖不一致）`);
+      ui.line(`  3. ${ui.cyan('dsh-rescue safe-mode')}  只留出厂 bundle，确认能起来再逐个加回来`);
+    }
+  }
+
+  return {
+    code: result.ok ? 0 : 1,
+    data: {
+      ok: result.ok,
+      reason: result.reason,
+      executable: app.path,
+      attempts: result.attempts,
+      restoredTo: restoreTarget,
+    },
+  };
+}
+
 async function cmdMenu(ctx) {
   const { ui } = ctx;
   const items = [
+    ['launch', '看门狗启动（超时自动回滚）'],
     ['status', '体检 + 最近崩溃（只读）'],
     ['rescue', '一键回滚到上次可用'],
     ['good', '把当前状态记为可用'],
@@ -747,6 +898,9 @@ async function runCommand(command, ctx) {
     case 'rescue':
     case 'rollback':
       return cmdRescue(ctx);
+    case 'launch':
+    case 'boot':
+      return cmdLaunch(ctx);
     case 'safe-mode':
       return cmdSafeMode(ctx);
     case 'undo':

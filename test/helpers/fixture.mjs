@@ -134,7 +134,7 @@ export function makeHome(options = {}) {
 }
 
 /** A CLI io stub: captured streams, no TTY, no colour, deterministic runtime. */
-export function makeIo({ home, profile, runtimeVersion = '0.2.1-rc.3', detector, env } = {}) {
+export function makeIo({ home, profile, runtimeVersion = '0.2.1-rc.3', detector, env, ...extra } = {}) {
   const stdoutChunks = [];
   const stderrChunks = [];
   const stdout = {
@@ -160,7 +160,7 @@ export function makeIo({ home, profile, runtimeVersion = '0.2.1-rc.3', detector,
     ...(env ?? {}),
   };
   return {
-    io: { stdout, stderr, stdin, env: argvEnv, runtimeVersion, detector, platform: process.platform },
+    io: { stdout, stderr, stdin, env: argvEnv, runtimeVersion, detector, platform: process.platform, ...extra },
     stdout: () => stdoutChunks.join(''),
     stderr: () => stderrChunks.join(''),
     json() {
