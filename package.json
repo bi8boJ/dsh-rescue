@@ -1,0 +1,42 @@
+{
+  "name": "dsh-rescue",
+  "version": "0.1.0",
+  "description": "Rescue a broken DeepSeek Harness plugin profile: snapshot, diagnose, and roll back without losing anything.",
+  "type": "module",
+  "bin": {
+    "dsh-rescue": "bin/dsh-rescue.mjs"
+  },
+  "exports": {
+    ".": "./src/cli.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "docs/design.md",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test",
+    "test:verbose": "node --test --test-reporter=spec"
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "recovery",
+    "backup",
+    "cli"
+  ],
+  "license": "MIT",
+  "author": "hejia",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hejia/dsh-rescue.git"
+  },
+  "dependencies": {}
+}
