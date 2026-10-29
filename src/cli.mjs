@@ -6,12 +6,13 @@ import { fileURLToPath } from 'node:url';
 import { resolveLayout } from './paths.mjs';
 import { captureState } from './state.mjs';
 import { collectKnownIds, runDoctor } from './doctor.mjs';
-import { detectRuntime } from './runtime.mjs';
+import { detectRuntime, asarCandidates } from './runtime.mjs';
+import { asarFromProfileOverlays } from './installation.mjs';
 import { latestCrash } from './crash.mjs';
 import { createSnapshot, getGood, listSnapshots, readSnapshot } from './snapshots.mjs';
 import { describeDiff, diffStates } from './diff.mjs';
 import { DshRunningError, restoreSnapshot, safeMode, undoLast } from './restore.mjs';
-import { isDshRunning } from './processes.mjs';
+import { isDshRunning, summarizeInstances } from './processes.mjs';
 import { createUi, formatTime, humanBytes, relativeTime } from './ui.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -22,6 +23,7 @@ const VALUE_FLAGS = new Map([
   ['--profile', 'profile'],
   ['--runtime', 'runtime'],
   ['--dsh', 'dsh'],
+  ['--asar', 'asar'],
   ['--retention', 'retention'],
   ['-m', 'label'],
   ['--message', 'label'],
@@ -63,6 +65,7 @@ const USAGE = `dsh-rescue ${PACKAGE.version} —— DSH 插件配置急救工具
   --profile <名字>     profile 名，默认 desktop
   --runtime <版本>     直接指定 DSH 运行时版本（跳过探测）
   --dsh <可执行文件>   dsh CLI 路径（用于探测版本）
+  --asar <app.asar>    额外读一个安装包（比如 DSH NEXT 的），用来解析它内置的 bundle
   --retention <数量>   非 good 快照保留多少个，默认 30
   --json               机器可读输出
   --yes                跳过确认
@@ -124,10 +127,12 @@ function makeContext({ command, positionals, options }, io, ui) {
   const profile = options.profile ?? 'desktop';
   const layout = resolveLayout({ home: options.home, profile, env, platform: io.platform });
   const retention = options.retention === undefined ? undefined : Number(options.retention);
+  const asarPaths = collectAsarPaths({ options, layout, env, platform: io.platform });
+  const instances = summarizeInstances(isDshRunning({ env, platform: io.platform }).names);
   let runtimeVersion = options.runtime ?? io.runtimeVersion ?? null;
   let runtimeSource = runtimeVersion ? 'flag' : null;
   if (!runtimeVersion) {
-    const detected = detectRuntime({ layout, env, platform: io.platform, force: false });
+    const detected = detectRuntime({ layout, env, platform: io.platform, force: false, asarPaths });
     runtimeVersion = detected.version;
     runtimeSource = detected.source;
   }
@@ -140,12 +145,32 @@ function makeContext({ command, positionals, options }, io, ui) {
     env,
     layout,
     profile,
+    asarPaths,
+    instances,
     retention: Number.isFinite(retention) ? retention : undefined,
     json: Boolean(options.json),
     detector: io.detector ?? (() => isDshRunning({ env, platform: io.platform })),
     runtimeVersion,
     runtimeSource,
   };
+}
+
+/**
+ * Archives worth reading: the one the user pointed at, the usual install
+ * locations, and any DSH NEXT install referenced by the overlays it left in the
+ * profile. Deduplicated, order preserved.
+ */
+function collectAsarPaths({ options, layout, env, platform }) {
+  const candidates = [];
+  if (options.asar) candidates.push(options.asar);
+  candidates.push(...asarCandidates({ env, platform }));
+  candidates.push(...asarFromProfileOverlays(layout.profileDir));
+  const seen = new Set();
+  return candidates.filter((candidate) => {
+    if (!candidate || seen.has(candidate)) return false;
+    seen.add(candidate);
+    return true;
+  });
 }
 
 async function confirm(question, ctx) {
@@ -173,19 +198,21 @@ function printFindings(ui, findings, { limit = 40 } = {}) {
 }
 
 function doctorFor(ctx, { withKnownIds = true } = {}) {
-  const first = runDoctor({ layout: ctx.layout, runtimeVersion: ctx.runtimeVersion });
+  const base = {
+    layout: ctx.layout,
+    runtimeVersion: ctx.runtimeVersion,
+    asarPaths: ctx.asarPaths,
+    instances: ctx.instances,
+  };
+  const first = runDoctor(base);
   if (!withKnownIds) return first;
   const collected = collectKnownIds({
     profileDir: ctx.layout.profileDir,
     bundleNames: first.summary.bundlesList,
+    asarPaths: ctx.asarPaths,
   });
   if (collected.ids.size === 0) return first;
-  return runDoctor({
-    layout: ctx.layout,
-    runtimeVersion: ctx.runtimeVersion,
-    state: first.state,
-    knownIds: collected,
-  });
+  return runDoctor({ ...base, state: first.state, knownIds: collected });
 }
 
 async function cmdHelp(ctx) {
@@ -539,6 +566,7 @@ async function cmdRescue(ctx) {
 
   const goodSnapshot = readSnapshot(ctx.layout, good.snapshotId);
   const brokenDiff = diffStates(goodSnapshot, broken);
+  const droppedDshKeys = dshKeyDelta(goodSnapshot, broken);
   const after = captureState({ home: ctx.layout.home, profile: ctx.layout.profile, layout: ctx.layout });
   const verify = diffStates(goodSnapshot, after);
 
@@ -552,6 +580,15 @@ async function cmdRescue(ctx) {
     } else {
       ui.line(ui.yellow('注意：坏掉时的配置和 good 一模一样 —— 出问题的可能不是配置，而是包本身或运行环境。'));
       ui.line(`  ${ui.dim('试 dsh-rescue doctor，或 dsh-rescue restore <更早的快照>。')}`);
+    }
+    if (droppedDshKeys.length > 0) {
+      ui.line('');
+      ui.line(
+        ui.yellow(
+          `注意：这次还原会把 package.json 里的 ${droppedDshKeys.map((key) => `dsh.${key}`).join('、')} 去掉 —— ` +
+            '这是 DSH NEXT 自己写进去的。NEXT 下次启动通常会补回来，但 bundle 顺序可能变。',
+        ),
+      );
     }
     ui.line('');
     ui.line(verify.empty ? ui.green('校验：当前配置与 good 逐字节一致 ✓') : ui.yellow('校验：与 good 仍有差异（可能有文件被正在运行的程序改写）'));
@@ -567,8 +604,27 @@ async function cmdRescue(ctx) {
       renamed: result.renamed,
       reversed: describeDiff(brokenDiff),
       verified: verify.empty,
+      droppedDshKeys,
     },
   };
+}
+
+/** `dsh` sub-keys the current profile has and the snapshot does not. */
+function dshKeyDelta(snapshot, current) {
+  const keysOf = (state) => {
+    const file = (state.files ?? []).find((entry) => entry.key === 'profilePackage');
+    if (!file || !file.exists || typeof file.text !== 'string') return null;
+    try {
+      const raw = JSON.parse(file.text);
+      return raw && raw.dsh && typeof raw.dsh === 'object' ? Object.keys(raw.dsh) : [];
+    } catch {
+      return null;
+    }
+  };
+  const snapshotKeys = keysOf(snapshot);
+  const currentKeys = keysOf(current);
+  if (!snapshotKeys || !currentKeys) return [];
+  return currentKeys.filter((key) => !snapshotKeys.includes(key));
 }
 
 async function cmdSafeMode(ctx) {

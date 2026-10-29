@@ -4,7 +4,8 @@ import path from 'node:path';
 import test from 'node:test';
 
 import { collectKnownIds, isShippedBundle, runDoctor } from '../src/doctor.mjs';
-import { SHIPPED_BUNDLES, makeHome, removeDir, writeManifest } from './helpers/fixture.mjs';
+import { SHIPPED_BUNDLES, makeHome, removeDir, tempDir, writeManifest } from './helpers/fixture.mjs';
+import { writeAsar } from './helpers/asar-builder.mjs';
 
 const RUNTIME = '0.2.1-rc.3';
 
@@ -218,4 +219,65 @@ test('hash 与 bytes 一致的快照式摘要', (t) => {
   assert.equal(result.summary.patchEntries, 2);
   assert.equal(isShippedBundle('@deepseek-ai/dsh-base'), true);
   assert.equal(isShippedBundle('dsh-pet'), false);
+});
+
+test('安装包内置的 bundle 不再被当成"没装"（DSH NEXT 就是这种）', (t) => {
+  const home = makeHome({ bundles: [...SHIPPED_BUNDLES, 'app-only-plugin'], deps: {} });
+  t.after(() => removeDir(home.home));
+  fs.rmSync(path.join(home.nodeModules, 'app-only-plugin'), { recursive: true, force: true });
+
+  const asarDir = tempDir();
+  t.after(() => removeDir(asarDir));
+  const asar = writeAsar(asarDir, {
+    'node_modules/app-only-plugin/package.json': JSON.stringify({
+      name: 'app-only-plugin',
+      version: '1.2.3',
+      dsh: { bundle: { patch: 'cordis.patch.yml' } },
+      peerDependencies: { '@deepseek-ai/dsh': '^0.2.0' },
+    }),
+  });
+
+  const result = runDoctor({
+    home: home.home,
+    profile: 'desktop',
+    runtimeVersion: RUNTIME,
+    asarPaths: [asar],
+  });
+  assert.equal(result.findings.some((entry) => entry.code === 'bundle.notInstalled'), false);
+  assert.ok(result.findings.some((entry) => entry.code === 'bundle.fromApp'));
+  assert.equal(result.ok, true, JSON.stringify(result.findings, null, 2));
+});
+
+test('主应用与 NEXT 同时运行 → 明确警告"插件抢文件"', (t) => {
+  const home = makeHome();
+  t.after(() => removeDir(home.home));
+  const both = runDoctor({
+    home: home.home,
+    profile: 'desktop',
+    runtimeVersion: RUNTIME,
+    instances: { main: 3, next: 2 },
+  });
+  const finding = both.findings.find((entry) => entry.code === 'instances.dualHome');
+  assert.ok(finding);
+  assert.equal(finding.level, 'warn');
+  assert.match(finding.hint, /只留一个/);
+
+  const onlyMain = runDoctor({
+    home: home.home,
+    profile: 'desktop',
+    runtimeVersion: RUNTIME,
+    instances: { main: 3, next: 0 },
+  });
+  assert.equal(onlyMain.findings.some((entry) => entry.code === 'instances.dualHome'), false);
+});
+
+test('profile 里有 NEXT 的痕迹 → 提示还原可能去掉 NEXT 的键', (t) => {
+  const home = makeHome({
+    packageJson: { dependencies: {}, dsh: { profile: { bundles: [...SHIPPED_BUNDLES] }, desktopNextPlugins: [] } },
+  });
+  t.after(() => removeDir(home.home));
+  const result = runDoctor({ home: home.home, profile: 'desktop', runtimeVersion: RUNTIME });
+  const finding = result.findings.find((entry) => entry.code === 'profile.sharedWithNext');
+  assert.ok(finding);
+  assert.match(finding.hint, /NEXT/);
 });

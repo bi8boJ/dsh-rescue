@@ -45,3 +45,22 @@ export function isDshRunning({ platform = process.platform, env = process.env, e
     return { known: false, names: [] };
   }
 }
+
+/**
+ * Split the running process names into the two apps that can share one
+ * `~/.dsh`. Running both at once is the usual cause of "plugins fighting over
+ * files": two hosts, two HMR watchers, two instances of every plugin.
+ */
+export function summarizeInstances(names = []) {
+  const list = Array.isArray(names) ? names : [];
+  const isMain = (name) => /deepseek harness/i.test(name);
+  const isNext = (name) => /dsh next/i.test(name);
+  const main = list.filter(isMain);
+  const next = list.filter((name) => isNext(name) && !isMain(name));
+  return {
+    main: main.length,
+    next: next.length,
+    names: list,
+    shared: main.length > 0 && next.length > 0,
+  };
+}

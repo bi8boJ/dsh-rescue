@@ -37,7 +37,19 @@ DSH 自带一半救援，但那一半有两个洞（都能在 `app.asar` 里读�
 **3. 空的 patch 文件比坏的更糟。**
 `dsh-app-boot` 的文档写得很清楚：空或只有注释的 `cordis.patch.yml` 会让启动**直接失败**——要停用这一层必须写 `[]`。所以"顺手清空一下"是把自己往启动失败上推。
 
-dsh-rescue 补的就是这三件事：**可逆、能覆盖挂死场景、绝不写空 patch。**
+**4. 主应用和 DSH NEXT 共用同一份 profile。**
+NEXT 会把 `dsh.desktopNext*` 键写进同一个 `package.json`，还额外用 `desktop-next.*.patch.json` 做 overlay，并自带几个 bundle（`dsh-community-market`、`@agents-anywhere/dsh-bridge-next`）。
+两个应用**同时开着**就是两个宿主、两套 HMR、每个插件两份实例，各自往同一批状态文件里写——"插件一直在抢文件"多半就是这个。而且这时点恢复按钮，另一个实例还在改同一份配置。
+
+dsh-rescue 补的就是这四件事：**可逆、能覆盖挂死场景、绝不写空 patch、认得 NEXT 的痕迹。**
+
+## 和 DSH NEXT 一起用
+
+- **同一时间只开一个应用。** `doctor` 会在两个同时运行时给出 `instances.dualHome` 警告。
+- **救之前把两个都关掉。** 否则工具会拒绝写（`--force` 可越过）。
+- bundle 解析会同时看两个安装包：NEXT 内置的那两个不会被误报成"没装"。
+- 还原较早的快照可能会去掉 NEXT 的 `desktopNext*` 键——`rescue` 会当场提示；NEXT 下次启动一般会补回，但 bundle 顺序可能变。
+- 装在非标准位置时（比如 `D:\deepseek harness\DSH NEXT`），一般不用管：工具会从 NEXT 写进 profile 的 overlay 里反推它的安装位置；实在不行加 `--asar <路径>`。
 
 ## 安装
 
@@ -97,6 +109,7 @@ dsh-rescue undo       # 起来之后一次性撤回
 --home <目录>       DSH_HOME，默认 $DSH_HOME 或 ~/.dsh
 --profile <名字>    profile 名，默认 desktop
 --runtime <版本>    直接指定 DSH 运行时版本（跳过探测）
+--asar <路径>       额外读一个 app.asar（比如 DSH NEXT 的），用来解析它内置的 bundle
 --json              机器可读输出
 --yes               跳过确认
 --dry-run           只打印计划，不写任何文件

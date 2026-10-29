@@ -36,7 +36,19 @@ The `.bak` only preserves the patch file — **there is no backup of "which plug
 **3. An empty patch file is worse than a broken one.**
 `dsh-app-boot` documents that an empty or comments-only `cordis.patch.yml` **fails boot** — to disable the layer you must write `[]`. So "just clear it" is a way to make things worse.
 
-dsh-rescue closes those three gaps: reversible, works for the hang case, never writes an empty patch.
+**4. The desktop app and DSH NEXT share one profile.**
+NEXT writes `dsh.desktopNext*` keys into the same `package.json`, adds `desktop-next.*.patch.json` overlays, and ships its own bundles (`dsh-community-market`, `@agents-anywhere/dsh-bridge-next`).
+Running both at once means two hosts, two HMR watchers and two live instances of every plugin, all writing the same state files — that is what "plugins fighting over files" looks like. The recovery button also writes config while the other instance is still using it.
+
+dsh-rescue closes those four gaps: reversible, works for the hang case, never writes an empty patch, and knows about NEXT.
+
+## Using it alongside DSH NEXT
+
+- **Run one app at a time.** `doctor` reports `instances.dualHome` when both are up.
+- **Close both before rescuing.** Otherwise the tool refuses to write (`--force` overrides).
+- Bundles are resolved across both archives, so NEXT's built-in ones are not reported as missing.
+- Restoring an older snapshot may drop NEXT's `desktopNext*` keys — `rescue` says so; NEXT usually re-adds them on the next launch, but the bundle order can change.
+- Unusual install locations (e.g. `D:\deepseek harness\DSH NEXT`) usually need nothing: the tool recovers the path from the overlay NEXT wrote into the profile, and `--asar <path>` is there when that fails.
 
 ## Install
 
@@ -87,7 +99,7 @@ dsh-rescue undo       # withdraw it once you are back in
 | `crash` | Parse the latest crash report: exit code, skipped bundles, version mismatches, entries stuck waiting for a service |
 | `menu` | Interactive menu (the `.cmd` default) |
 
-Options: `--home`, `--profile`, `--runtime`, `--json`, `--yes`, `--dry-run`, `--force`.
+Options: `--home`, `--profile`, `--runtime`, `--asar`, `--json`, `--yes`, `--dry-run`, `--force`.
 
 The runtime version is read straight out of the installed `app.asar` (the same manifest DSH itself consults for its compatibility gate), so `dsh` does not need to be on `PATH`. If it cannot be found — an unusual install location — pass `--runtime <version>`, otherwise the version-gate check is skipped.
 

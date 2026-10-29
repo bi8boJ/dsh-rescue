@@ -5,6 +5,7 @@ import { captureState, parseProfile, ProfileJsonError } from './state.mjs';
 import { analyzePatch } from './yamlpatch.mjs';
 import { satisfies } from './semver-lite.mjs';
 import { readText } from './fsx.mjs';
+import { nextMarkers, readFromAsar, resolveAppPackage } from './installation.mjs';
 
 const DSH_PREFIX = '@deepseek-ai/dsh';
 
@@ -26,35 +27,66 @@ export function readManifest(profileDir, name) {
   }
 }
 
+/** Where a package directory is, and how to read a file beside it. */
+function packageReader({ profileDir, name, asarPaths }) {
+  const local = readManifest(profileDir, name);
+  if (local.present && local.manifest) {
+    return {
+      origin: 'profile',
+      manifest: local.manifest,
+      read: (rel) => {
+        try {
+          return readText(path.resolve(packageDirFor(profileDir, name), rel));
+        } catch {
+          return null;
+        }
+      },
+    };
+  }
+  if (local.present && !local.manifest) return { origin: 'profile', manifest: null, invalid: true };
+
+  const app = resolveAppPackage({ name, asarPaths });
+  if (!app) return null;
+  if (app.origin === 'app-unpacked') {
+    const base = path.join(`${app.asarPath}.unpacked`, 'node_modules', ...String(name).split('/'));
+    return {
+      origin: app.origin,
+      manifest: app.manifest,
+      read: (rel) => readText(path.join(base, String(rel).replace(/^[./\\]+/, ''))),
+    };
+  }
+  return {
+    origin: app.origin,
+    manifest: app.manifest,
+    read: (rel) => {
+      const buffer = readFromAsar(app.asarPath, app.prefix ?? '', `node_modules/${name}/${rel}`);
+      return buffer ? buffer.toString('utf8') : null;
+    },
+  };
+}
+
 /**
  * Every entry id the enabled bundles declare in their own patch files.
- * `complete: false` means some bundle could not be read (typically a shipped
- * bundle that lives inside the app instead of the profile), so a patch id that
- * looks unknown may simply belong to a layer we cannot see. Callers must not
- * report those as findings.
+ *
+ * Bundles can live in the profile *or* inside an app archive (DSH NEXT injects
+ * some of its own), so both are read. `complete: false` means a layer could not
+ * be read at all, and callers must not report "unknown id" findings then.
  */
-export function collectKnownIds({ profileDir, bundleNames = [] }) {
+export function collectKnownIds({ profileDir, bundleNames = [], asarPaths = [] }) {
   const ids = new Set();
   let complete = bundleNames.length > 0;
   for (const name of bundleNames) {
-    const { present, manifest } = readManifest(profileDir, name);
-    if (!present || !manifest) {
+    const located = packageReader({ profileDir, name, asarPaths });
+    if (!located || !located.manifest) {
       complete = false;
       continue;
     }
-    const declared = manifest.dsh && manifest.dsh.bundle ? manifest.dsh.bundle.patch : undefined;
+    const declared = located.manifest.dsh && located.manifest.dsh.bundle ? located.manifest.dsh.bundle.patch : undefined;
     if (declared === undefined || declared === null) continue;
     const list = Array.isArray(declared) ? declared : [declared];
     for (const rel of list) {
       if (typeof rel !== 'string') continue;
-      const target = path.resolve(packageDirFor(profileDir, name), rel);
-      let text = null;
-      try {
-        text = readText(target);
-      } catch {
-        complete = false;
-        continue;
-      }
+      const text = located.read(rel);
       if (text === null) {
         complete = false;
         continue;
@@ -86,7 +118,7 @@ function requirementOf(manifest) {
 
 /**
  * Static pre-flight. Nothing here imports or executes a plugin: it reads
- * manifests and the two YAML layers.
+ * manifests, the app archive and the two YAML layers.
  */
 export function runDoctor({
   home,
@@ -95,6 +127,8 @@ export function runDoctor({
   runtimeVersion = null,
   state = null,
   knownIds = null,
+  asarPaths = [],
+  instances = null,
 } = {}) {
   const resolved = layout ?? resolveLayout({ home, profile });
   const findings = [];
@@ -146,29 +180,59 @@ export function runDoctor({
     if (duplicates.length > 0) {
       add('warn', 'bundles.duplicate', `bundles 里有重复项：${[...new Set(duplicates)].join(', ')}`);
     }
+
+    const markers = nextMarkers({ profileDir: resolved.profileDir, packageJson: parsed.raw });
+    if (markers.length > 0) {
+      add(
+        'info',
+        'profile.sharedWithNext',
+        `这份 profile 同时被 DSH NEXT 使用（${markers.slice(0, 3).join('、')}）`,
+        '还原较早的快照可能会去掉 NEXT 注入的 bundle 与 desktopNext* 键；NEXT 下次启动一般会补回，但顺序可能变',
+      );
+    }
   }
 
   let gateUnknownReported = false;
   for (const name of bundleNames) {
     const inDeps = Object.hasOwn(dependencies, name);
-    const { present, invalid, manifest } = readManifest(resolved.profileDir, name);
-    if (!present) {
+    const located = packageReader({ profileDir: resolved.profileDir, name, asarPaths });
+
+    if (!located) {
       if (inDeps) {
-        add('error', 'bundle.missing', `${name} 在 dependencies 里，但 node_modules 里没有它的目录`, '装包掉了：重跑一次原来的 dsh plugin add，或从快照还原后重启');
+        add(
+          'error',
+          'bundle.missing',
+          `${name} 在 dependencies 里，但 node_modules 里没有它的目录`,
+          '装包掉了：重跑一次原来的 dsh plugin add，或从快照还原后重启',
+        );
       } else if (!isShippedBundle(name)) {
         add('warn', 'bundle.notInstalled', `${name} 既不在 dependencies 里也没装，宿主会跳过它`);
       }
       continue;
     }
-    if (invalid || !manifest) {
+    if (located.invalid || !located.manifest) {
       add('warn', 'bundle.manifestInvalid', `${name} 的 package.json 读不出来或是坏 JSON`);
       continue;
     }
-    if (typeof manifest.name === 'string' && manifest.name !== name) {
-      add('error', 'bundle.nameMismatch', `${name} 的 package.json 里 name 是 ${manifest.name}，与 bundles 里的键不一致`);
-    }
-    if (!inDeps && !isShippedBundle(name)) {
-      add('warn', 'bundle.notInDeps', `${name} 不在 dependencies 里（bundles 与依赖清单不一致）`);
+
+    const manifest = located.manifest;
+    if (located.origin !== 'profile') {
+      // Shipped bundles are supposed to live in the app; only third-party ones
+      // resolved from an archive are worth pointing out.
+      if (!isShippedBundle(name)) {
+        add(
+          'info',
+          'bundle.fromApp',
+          `${name}@${manifest.version ?? '?'} 来自安装包（不是 profile 里的依赖），宿主会从应用目录加载它`,
+        );
+      }
+    } else {
+      if (typeof manifest.name === 'string' && manifest.name !== name) {
+        add('error', 'bundle.nameMismatch', `${name} 的 package.json 里 name 是 ${manifest.name}，与 bundles 里的键不一致`);
+      }
+      if (!inDeps && !isShippedBundle(name)) {
+        add('warn', 'bundle.notInDeps', `${name} 不在 dependencies 里（bundles 与依赖清单不一致）`);
+      }
     }
 
     const requirement = requirementOf(manifest);
@@ -189,12 +253,13 @@ export function runDoctor({
       }
       continue;
     }
+    const originLabel = located.origin === 'profile' ? '' : '（安装包）';
     if (requirement.range !== undefined) {
       if (!satisfies(runtimeVersion, requirement.range)) {
         add(
           'error',
           'gate.incompatible',
-          `${name}@${manifest.version ?? '?'} 要求 engines.dsh ${requirement.range}，当前运行时 ${runtimeVersion}`,
+          `${name}@${manifest.version ?? '?'}${originLabel} 要求 engines.dsh ${requirement.range}，当前运行时 ${runtimeVersion}`,
           '要么升级/降级插件，要么 dsh plugin allow-version 显式豁免（承认崩溃风险），要么让 rescue 回滚',
         );
       }
@@ -205,7 +270,7 @@ export function runDoctor({
         add(
           'error',
           'gate.incompatible',
-          `${name}@${manifest.version ?? '?'} 要求 ${peer} ${range}，当前运行时 ${runtimeVersion}`,
+          `${name}@${manifest.version ?? '?'}${originLabel} 要求 ${peer} ${range}，当前运行时 ${runtimeVersion}`,
           '同上：升/降插件、显式豁免，或回滚',
         );
       }
@@ -314,6 +379,15 @@ export function runDoctor({
     }
   }
 
+  if (instances && instances.main > 0 && instances.next > 0) {
+    add(
+      'warn',
+      'instances.dualHome',
+      '主应用和 DSH NEXT 同时在跑，它们共用同一个 profile：两个宿主、两套 HMR、两套插件实例会互相覆盖状态文件（"插件在抢文件"多半就是这个）',
+      '救援前只留一个应用；切换应用时先关掉另一个',
+    );
+  }
+
   const errorsCount = findings.filter((finding) => finding.level === 'error').length;
   const warningsCount = findings.filter((finding) => finding.level === 'warn').length;
   const infosCount = findings.filter((finding) => finding.level === 'info').length;
@@ -335,6 +409,8 @@ export function runDoctor({
       patchBytes: patchFile && patchFile.exists ? patchFile.bytes : null,
       runtimeVersion,
       bundlesList: bundleNames,
+      appBundles: findings.filter((finding) => finding.code === 'bundle.fromApp').length,
+      instances: instances ?? null,
     },
     state: captured,
     layout: resolved,

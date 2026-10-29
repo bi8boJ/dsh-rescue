@@ -52,6 +52,17 @@
 
 不抓 `node_modules` 本体。**恢复配置 ≠ 重装包**；包缺失时明确报告并给出 `dsh plugin --profile <p> add <name>` 的提示，不代执行。
 
+### 3.1 同一份 profile 有两个使用者
+
+主应用和 DSH NEXT 共用一个 `~/.dsh/profiles/desktop`。实测证据：
+
+- NEXT 往 `package.json` 里写 `dsh.desktopNextPlugins` / `desktopNextScheduleBundle` / `desktopNextOnboarding`
+- NEXT 用 `desktop-next.cordis.patch.json`、`desktop-next.runtime.patch.json` 做 overlay（`cordis.yml` 里写明「the tree is composed as patches：bundles → cordis.patch.yml → --patch overlays」）
+- NEXT 自带 `dsh-community-market@0.1.0-dev.0` 与 `@agents-anywhere/dsh-bridge-next@2.1.0-desktop…`，它们**不在** profile 的 `dependencies` 里，只在 app.asar 里
+- 两边的 DSH 运行时其实是同一个：`0.2.1-rc.3`（NEXT 的版本号 `2.0.20-next` 是 Electron 应用版本，不是运行时版本）
+
+由此三条设计约束：**bundle 解析要跨安装包**（否则 NEXT 内置的两个会被误报成"没装"）；**运行时版本解析兼容两种 asar 布局**（Desktop 有 `dsh/` 前缀、NEXT 没有）；**同时运行时必须警告并要求只留一个**（两个宿主 + 两套 HMR 会互相覆盖状态文件，这就是"插件抢文件"）。
+
 ## 4. 写文件的硬规则
 
 1. **先解析后写、写完再解析。** JSON 双向校验；YAML 只做行级操作。

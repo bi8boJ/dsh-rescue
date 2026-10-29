@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.1.1
+
+**DSH NEXT 兼容（两个应用共用一份 profile 是"插件抢文件"的主因）**
+- 运行时版本解析兼容两种 `app.asar` 布局（`dsh/` 前缀与根目录），新增 `--asar` 指定归档
+- bundle 可以从安装包解析：NEXT 内置的 `dsh-community-market`、`@agents-anywhere/dsh-bridge-next` 不再被误报成"没装"
+- 从 NEXT 写进 profile 的 `desktop-next.*.patch.json` 里自动反推它的安装位置
+- 新增 `instances.dualHome`（主应用与 NEXT 同时运行）与 `profile.sharedWithNext`（profile 被 NEXT 共用）检查
+- `rescue` 会提示这次还原会不会去掉 NEXT 写入的 `dsh.desktopNext*` 键
+- 158 个用例
+
 ## 0.1.0
 
 第一个可用版本。

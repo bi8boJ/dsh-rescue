@@ -30,6 +30,25 @@ test('优先从 app.asar 读运行时版本，不启动子进程', (t) => {
   assert.equal(spawned, false);
 });
 
+test('DSH NEXT 那种根目录布局也能读到版本', (t) => {
+  const dir = tempDir();
+  t.after(() => removeDir(dir));
+  const asar = writeAsar(dir, {
+    'node_modules/@deepseek-ai/dsh-app-boot/package.json': JSON.stringify({ version: '0.2.1-rc.3' }),
+  });
+  assert.equal(versionFromAsar(asar), '0.2.1-rc.3');
+});
+
+test('asarPaths 可以一次给多个归档，按顺序取第一个有版本的', (t) => {
+  const dir = tempDir();
+  t.after(() => removeDir(dir));
+  const empty = writeAsar(dir, { 'x.txt': '1' }, 'empty.asar');
+  const good = runtimeAsar(dir, '9.9.9');
+  const result = detectRuntime({ env: {}, platform: 'win32', asarPaths: [empty, good] });
+  assert.equal(result.version, '9.9.9');
+  assert.equal(result.source, 'asar');
+});
+
 test('asar 里没有该清单时返回 null', (t) => {
   const dir = tempDir();
   t.after(() => removeDir(dir));

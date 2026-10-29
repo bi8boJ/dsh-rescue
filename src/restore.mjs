@@ -11,9 +11,13 @@ export const SHIPPED_MODE_BUNDLES = Object.freeze(['@deepseek-ai/dsh-base', '@de
 
 export class DshRunningError extends Error {
   constructor(names) {
+    const both = names.some((name) => /deepseek harness/i.test(name)) && names.some((name) => /dsh next/i.test(name));
+    const extra = both
+      ? '（主应用和 DSH NEXT 同时在跑：两个宿主共用同一份 profile，改文件会被两边同时热应用。）'
+      : '';
     super(
       `DSH 正在运行（${names.join('、')}）。此刻写 profile 会被 dsh-hmr 当场热应用，` +
-        '可能把还好的状态也弄坏。请先退出 DSH 再执行；确实要强写，加 --force。',
+        `可能把还好的状态也弄坏${extra}。请先退出 DSH 再执行；确实要强写，加 --force。`,
     );
     this.name = 'DshRunningError';
     this.names = names;
