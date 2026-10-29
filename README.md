@@ -103,6 +103,8 @@ dsh-rescue undo       # 起来之后一次性撤回
 --force             DSH 在跑也照写 / 体检不过也标记 good
 ```
 
+运行时版本会自动从安装目录的 `app.asar` 里读（和 DSH 自己做版本闸门时读的是同一份清单），所以不需要 `dsh` 在 PATH 上；真的读不到（比如装到了非常规位置）就用 `--runtime <版本>` 指定，否则版本闸门那一项会跳过。
+
 ## 它是怎么保证"不丢东西"的
 
 - **写之前先存证。** 任何写操作都会先打一份前置快照（`pre-restore` / `pre-rescue` / `pre-undo` / `pre-safe-mode`），坏现场永远还在。
@@ -143,7 +145,7 @@ Windows 是实测平台（DSH Desktop 的主场）。macOS / Linux 的路径与�
 ## 开发
 
 ```bash
-node --test          # 132 个用例，全部跑在临时目录的合成 home 上
+node --test          # 145 个用例，全部跑在临时目录的合成 home 上
 DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # 额外跑两个真实机器只读检查
 ```
 

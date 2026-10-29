@@ -90,6 +90,8 @@ restore   safe-mode undo    list    diff    crash    menu
 - 真实 profile 只读体检，并用文件 stat 断言「一个字节都没改」
 - 把真实 `package.json` / `cordis.patch.yml` 复制到临时 home，跑一遍 save → 破坏 → restore，断言逐字节还原
 
+运行时版本不走子进程：直接按 asar 头（offset 12 是目录树 JSON 长度，payload 起点 16+长度再按 4 字节对齐）从 `app.asar` 里取 `dsh/node_modules/@deepseek-ai/dsh-app-boot/package.json`，也就是 `getDshRuntimeVersion()` 读的同一份清单。CLI 只是退路，且 `.cmd` 必须经 `cmd.exe /d /s /c ""<path>" --version"` 才能启动。
+
 破坏矩阵覆盖：空 patch、纯注释 patch、非法 JSON、`bundles` 非数组、bundle 不在依赖且未安装、依赖键≠包名、patch 指向未知 id、`compatibility.json` 损坏、包目录缺失、快照自身不完整、快照里 package.json 是坏 JSON、DSH 正在运行、非 TTY 取消。
 
 ## 8. 阶段

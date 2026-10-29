@@ -45,6 +45,7 @@ export function createSnapshot({
   label = '',
   doctor = null,
   state = null,
+  runtimeVersion = null,
   retention = DEFAULT_RETENTION,
   now = new Date(),
   layout,
@@ -69,6 +70,7 @@ export function createSnapshot({
     createdAt: captured.createdAt ?? now.toISOString(),
     home: resolved.home,
     profile: resolved.profile,
+    runtimeVersion: runtimeVersion ?? null,
     bundles: bundlesOf(captured),
     files: captured.files.map((file) => ({
       key: file.key,

@@ -89,6 +89,8 @@ dsh-rescue undo       # withdraw it once you are back in
 
 Options: `--home`, `--profile`, `--runtime`, `--json`, `--yes`, `--dry-run`, `--force`.
 
+The runtime version is read straight out of the installed `app.asar` (the same manifest DSH itself consults for its compatibility gate), so `dsh` does not need to be on `PATH`. If it cannot be found — an unusual install location — pass `--runtime <version>`, otherwise the version-gate check is skipped.
+
 ## Safety guarantees
 
 - Every write is preceded by a pre-state snapshot — the broken state is never destroyed.
@@ -129,7 +131,7 @@ Crash logs are looked up in both:
 ## Development
 
 ```bash
-node --test                                            # 132 tests, all on synthetic homes
+node --test                                            # 145 tests, all on synthetic homes
 DSH_REAL_HOME=1 node --test test/real-smoke.test.mjs   # two extra read-only checks on the real home
 ```
 

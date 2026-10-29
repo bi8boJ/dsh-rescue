@@ -287,6 +287,7 @@ async function cmdStatus(ctx) {
 
 function sourceLabel(ctx) {
   if (ctx.runtimeSource === 'flag') return '指定';
+  if (ctx.runtimeSource === 'asar') return '安装包';
   if (ctx.runtimeSource === 'cli') return 'cli';
   if (ctx.runtimeSource === 'cache') return '缓存';
   return '未探测';
@@ -343,6 +344,7 @@ async function cmdSave(ctx, kind = 'manual') {
     kind,
     label: ctx.options.label ?? '',
     doctor,
+    runtimeVersion: ctx.runtimeVersion,
     retention: ctx.retention,
   });
   if (!ctx.json) {

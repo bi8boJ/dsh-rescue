@@ -148,6 +148,7 @@ export function runDoctor({
     }
   }
 
+  let gateUnknownReported = false;
   for (const name of bundleNames) {
     const inDeps = Object.hasOwn(dependencies, name);
     const { present, invalid, manifest } = readManifest(resolved.profileDir, name);
@@ -177,7 +178,15 @@ export function runDoctor({
     }
     if (!requirement) continue;
     if (!runtimeVersion) {
-      add('info', 'gate.unknown', `没有探测到 DSH 运行时版本，跳过 ${name} 的版本闸门检查`, '用 --runtime <版本> 或 --dsh <dsh 可执行文件> 指定');
+      if (!gateUnknownReported) {
+        gateUnknownReported = true;
+        add(
+          'info',
+          'gate.unknown',
+          '没有探测到 DSH 运行时版本，跳过所有插件的版本闸门检查',
+          '用 --runtime <版本> 指定；不填会自动从安装目录的 app.asar 里读',
+        );
+      }
       continue;
     }
     if (requirement.range !== undefined) {
